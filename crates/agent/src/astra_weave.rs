@@ -42,6 +42,9 @@ fn astra_weave_ew_vpc_virtual_network_id(vni: i32) -> String {
     format!("astra-weave-vni-{vni}")
 }
 
+// Given an AstraAttachment sent from carbide, this routine builds and
+// returns a VirtualNetworkAttachmentSpec that can be used to create a
+// VirtualNetworkAttachment on the DOCA Weave server.
 fn astra_attachment_weave_ew_vpc_spec(
     astra_attachment_status: &AstraAttachmentStatus,
 ) -> Result<VirtualNetworkAttachmentSpec, State> {
@@ -133,11 +136,19 @@ async fn create_weave_ew_vpc_virtual_networks(
 
     log_virtual_networks(&list_vni_rsp.virtual_networks);
 
-    let mut seen_vni_states: HashMap<u32, State> = list_vni_rsp
+    // From the list of virtual networks on the DOCA Weave server, build a
+    // map of VNI to (id, state) for each virtual network for comparison with
+    // the AstraAttachment statuses.
+    let mut seen_virtual_networks: HashMap<u32, (Option<String>, State)> = list_vni_rsp
         .virtual_networks
         .iter()
         .filter_map(|virtual_network| {
             let vni = virtual_network.spec.as_ref()?.vni;
+            let id = virtual_network
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.id.clone())
+                .filter(|id| !id.is_empty());
             // Preserve "Virtual Network exists but is not usable" locally when the server omits status.
             let state = virtual_network
                 .status
@@ -148,7 +159,7 @@ async fn create_weave_ew_vpc_virtual_networks(
                     reason: "Response is missing state".to_string(),
                     message: "list_virtual_networks".to_string(),
                 });
-            Some((vni, state))
+            Some((vni, (id, state)))
         })
         .collect();
 
@@ -164,7 +175,22 @@ async fn create_weave_ew_vpc_virtual_networks(
         }
 
         let astra_vni = astra_attachment_status.vni as u32;
-        if let Some(weave_ew_vpc_state) = seen_vni_states.get(&astra_vni) {
+        let expected_vni_id = astra_weave_ew_vpc_virtual_network_id(astra_attachment_status.vni);
+        if let Some((weave_ew_vpc_id, weave_ew_vpc_state)) = seen_virtual_networks.get(&astra_vni) {
+            if weave_ew_vpc_id.as_deref() != Some(expected_vni_id.as_str()) {
+                set_astra_attachment_status_with_weave_ew_vpc_not_ready(
+                    astra_attachment_status,
+                    State {
+                        phase: Phase::Error.into(),
+                        reason: "Conflicting DOCA Weave virtual network ID".to_string(),
+                        message: format!(
+                            "VNI {astra_vni} exists as {:?}, expected {expected_vni_id}",
+                            weave_ew_vpc_id
+                        ),
+                    },
+                );
+                continue;
+            }
             if weave_ew_vpc_state.phase != Phase::Ready as i32 {
                 set_astra_attachment_status_with_weave_ew_vpc_not_ready(
                     astra_attachment_status,
@@ -184,9 +210,7 @@ async fn create_weave_ew_vpc_virtual_networks(
                 id: Some(astra_weave_ew_vpc_virtual_network_id(
                     astra_attachment_status.vni,
                 )),
-                creation_timestamp: Some(
-                    prost_types::Timestamp::date_time_nanos(2026, 1, 1, 0, 0, 0, 0).unwrap(),
-                ),
+                creation_timestamp: None,
                 deletion_timestamp: None,
                 user_data: HashMap::new(),
             }),
@@ -209,7 +233,10 @@ async fn create_weave_ew_vpc_virtual_networks(
                             reason: "Response is missing state".to_string(),
                             message: "create_virtual_network".to_string(),
                         });
-                    seen_vni_states.insert(astra_vni, weave_ew_vpc_state.clone());
+                    seen_virtual_networks.insert(
+                        astra_vni,
+                        (Some(expected_vni_id.clone()), weave_ew_vpc_state.clone()),
+                    );
                     weave_ew_vpc_state
                 }
                 None => State {
@@ -242,6 +269,9 @@ async fn create_weave_ew_vpc_virtual_networks(
     Ok(())
 }
 
+// This routine queries the DOCA Weave server for the list of virtual networks
+// and deletes any virtual networks that are not in the AstraConfig sent to
+// us by Carbide. Ignore virtual networks with VNI 0.
 async fn delete_stale_weave_ew_vpc_virtual_networks(
     socket_path: &str,
     astra_config_status: &AstraConfigStatus,
@@ -312,7 +342,9 @@ async fn delete_stale_weave_ew_vpc_virtual_networks(
 
 // Take a diff of Doca Weave Server vs Astra Attachments (both ways)
 // and create or delete attachments as needed. Handle special case
-// where an attachment may have changed its partition aka vni.
+// where an attachment may have changed its partition aka vni. This
+// case is handled by deleting the existing attachment and creating a new one
+// with the new VNI.
 async fn update_weave_ew_vpc_astra_attachments(
     socket_path: &str,
     astra_config_status: &mut AstraConfigStatus,
@@ -342,6 +374,10 @@ async fn update_weave_ew_vpc_astra_attachments(
         }
 
         let desired_vnet_id = astra_weave_ew_vpc_virtual_network_id(astra_attachment_status.vni);
+
+        // same_nic_attachments is a vector of all attachments on the DOCA
+        // Weave server that have the same NIC MAC address as the
+        // AstraAttachment.
         let same_nic_attachments = list_vni_attachments_rsp
             .virtual_network_attachments
             .iter()
@@ -355,6 +391,8 @@ async fn update_weave_ew_vpc_astra_attachments(
             })
             .collect::<Vec<_>>();
 
+        // Get list of conflicting attachments that have their vni changed
+        // and delete them.
         let mut exact_attachment = None;
         let mut conflicting_attachments = Vec::new();
         for weave_ew_vpc_attachment in same_nic_attachments {
@@ -404,77 +442,98 @@ async fn update_weave_ew_vpc_astra_attachments(
             continue;
         }
 
-        // Create or recreate new attachments
-        if astra_attachment_status.vni == 0 {
-            tracing::trace!(
-                ?astra_attachment_status,
-                "Skipping virtual network attachment create for Astra attachment with VNI 0"
-            );
-            continue;
-        }
-
-        let weave_ew_vpc_attachment_spec =
-            match astra_attachment_weave_ew_vpc_spec(astra_attachment_status) {
-                Ok(weave_ew_vpc_attachment_spec) => weave_ew_vpc_attachment_spec,
-                Err(weave_ew_vpc_state) => {
-                    set_astra_attachment_status_with_weave_ew_vpc_not_ready(
-                        &mut *astra_attachment_status,
-                        weave_ew_vpc_state,
-                    );
-                    continue;
-                }
-            };
-
-        let weave_ew_vpc_attachment_create_req = CreateVirtualNetworkAttachmentRequest {
-            metadata: Some(ObjectMetadata {
-                id: None,
-                creation_timestamp: Some(
-                    prost_types::Timestamp::date_time_nanos(2026, 1, 1, 0, 0, 0, 0).unwrap(),
-                ),
-                deletion_timestamp: None,
-                user_data: HashMap::new(),
-            }),
-            spec: Some(weave_ew_vpc_attachment_spec),
-        };
-
-        let weave_ew_vpc_attachment_create_rsp = weave_ew_vpc_create_virtual_network_attachment(
-            socket_path,
-            weave_ew_vpc_attachment_create_req,
-        )
-        .await;
-        let weave_ew_vpc_state = match weave_ew_vpc_attachment_create_rsp {
-            Ok(weave_ew_vpc_attachment_create_rsp) => weave_ew_vpc_attachment_create_rsp
-                .virtual_network_attachment
-                .and_then(|virtual_network_attachment| virtual_network_attachment.status)
-                .and_then(|status| status.state)
-                .unwrap_or_else(|| State {
-                    phase: Phase::Error.into(),
-                    reason: "Missing Doca Weave Server Status State".to_string(),
-                    message: "create_virtual_network_attachment".to_string(),
-                }),
-            Err(err) => State {
-                phase: Phase::Error.into(),
-                reason: "API Failed".to_string(),
-                message: format!("create_virtual_network_attachment: {err:#}"),
-            },
-        };
-
-        if weave_ew_vpc_state.phase != Phase::Ready as i32 {
-            set_astra_attachment_status_with_weave_ew_vpc_not_ready(
-                astra_attachment_status,
-                weave_ew_vpc_state,
-            );
-            continue;
-        }
-
-        tracing::info!(
-            "Created virtual network attachment for attachment status {:?}",
-            astra_attachment_status
-        );
+        create_or_recreate_weave_ew_vpc_astra_attachment(socket_path, astra_attachment_status)
+            .await?;
     }
 
-    // Delete any attachments that no longer exist on the DOCA Weave server.
-    for virtual_network_attachment in list_vni_attachments_rsp.virtual_network_attachments {
+    delete_stale_weave_ew_vpc_astra_attachments(
+        socket_path,
+        &list_vni_attachments_rsp.virtual_network_attachments,
+        &deleted_attachment_ids,
+        astra_config_status,
+    )
+    .await
+}
+
+async fn create_or_recreate_weave_ew_vpc_astra_attachment(
+    socket_path: &str,
+    astra_attachment_status: &mut AstraAttachmentStatus,
+) -> eyre::Result<()> {
+    if astra_attachment_status.vni == 0 {
+        tracing::trace!(
+            ?astra_attachment_status,
+            "Skipping virtual network attachment create for Astra attachment with VNI 0"
+        );
+        return Ok(());
+    }
+
+    let weave_ew_vpc_attachment_spec =
+        match astra_attachment_weave_ew_vpc_spec(astra_attachment_status) {
+            Ok(weave_ew_vpc_attachment_spec) => weave_ew_vpc_attachment_spec,
+            Err(weave_ew_vpc_state) => {
+                set_astra_attachment_status_with_weave_ew_vpc_not_ready(
+                    &mut *astra_attachment_status,
+                    weave_ew_vpc_state,
+                );
+                return Ok(());
+            }
+        };
+
+    let weave_ew_vpc_attachment_create_req = CreateVirtualNetworkAttachmentRequest {
+        metadata: Some(ObjectMetadata {
+            id: None,
+            creation_timestamp: None,
+            deletion_timestamp: None,
+            user_data: HashMap::new(),
+        }),
+        spec: Some(weave_ew_vpc_attachment_spec),
+    };
+
+    let weave_ew_vpc_attachment_create_rsp = weave_ew_vpc_create_virtual_network_attachment(
+        socket_path,
+        weave_ew_vpc_attachment_create_req,
+    )
+    .await;
+    let weave_ew_vpc_state = match weave_ew_vpc_attachment_create_rsp {
+        Ok(weave_ew_vpc_attachment_create_rsp) => weave_ew_vpc_attachment_create_rsp
+            .virtual_network_attachment
+            .and_then(|virtual_network_attachment| virtual_network_attachment.status)
+            .and_then(|status| status.state)
+            .unwrap_or_else(|| State {
+                phase: Phase::Error.into(),
+                reason: "Missing Doca Weave Server Status State".to_string(),
+                message: "create_virtual_network_attachment".to_string(),
+            }),
+        Err(err) => State {
+            phase: Phase::Error.into(),
+            reason: "API Failed".to_string(),
+            message: format!("create_virtual_network_attachment: {err:#}"),
+        },
+    };
+
+    if weave_ew_vpc_state.phase != Phase::Ready as i32 {
+        set_astra_attachment_status_with_weave_ew_vpc_not_ready(
+            astra_attachment_status,
+            weave_ew_vpc_state,
+        );
+        return Ok(());
+    }
+
+    tracing::info!(
+        "Created virtual network attachment for attachment status {:?}",
+        astra_attachment_status
+    );
+
+    Ok(())
+}
+
+async fn delete_stale_weave_ew_vpc_astra_attachments(
+    socket_path: &str,
+    weave_ew_vpc_attachments: &[VirtualNetworkAttachment],
+    deleted_attachment_ids: &HashSet<String>,
+    astra_config_status: &AstraConfigStatus,
+) -> eyre::Result<()> {
+    for virtual_network_attachment in weave_ew_vpc_attachments {
         if virtual_network_attachment
             .metadata
             .as_ref()
@@ -484,24 +543,10 @@ async fn update_weave_ew_vpc_astra_attachments(
             continue;
         }
 
-        let virtual_network_attachment_exists = astra_config_status
-            .astra_attachments_status
-            .iter()
-            .any(|astra_attachment_status| {
-                virtual_network_attachment
-                    .spec
-                    .as_ref()
-                    .is_some_and(|spec| {
-                        astra_attachment_status.vni != 0
-                            && spec.nic_id == astra_attachment_status.mac_address.as_str()
-                            && spec.vnet_id
-                                == astra_weave_ew_vpc_virtual_network_id(
-                                    astra_attachment_status.vni,
-                                )
-                    })
-            });
-
-        if !virtual_network_attachment_exists {
+        if !weave_ew_vpc_attachment_exists_in_astra_config(
+            virtual_network_attachment,
+            astra_config_status,
+        ) {
             let Some(del_attachment_id) = virtual_network_attachment
                 .metadata
                 .as_ref()
@@ -541,6 +586,26 @@ async fn update_weave_ew_vpc_astra_attachments(
     }
 
     Ok(())
+}
+
+fn weave_ew_vpc_attachment_exists_in_astra_config(
+    virtual_network_attachment: &VirtualNetworkAttachment,
+    astra_config_status: &AstraConfigStatus,
+) -> bool {
+    astra_config_status
+        .astra_attachments_status
+        .iter()
+        .any(|astra_attachment_status| {
+            virtual_network_attachment
+                .spec
+                .as_ref()
+                .is_some_and(|spec| {
+                    astra_attachment_status.vni != 0
+                        && spec.nic_id == astra_attachment_status.mac_address.as_str()
+                        && spec.vnet_id
+                            == astra_weave_ew_vpc_virtual_network_id(astra_attachment_status.vni)
+                })
+        })
 }
 
 pub async fn delete_match_attachment_with_vni_changed(
@@ -605,6 +670,12 @@ pub async fn delete_match_attachment_with_vni_changed(
     Ok(true)
 }
 
+// This is the main entry point into this module.
+// The agent main_loop calls this during every iteration,
+// giving it the AstraConfig supplied by Carbide.
+// We return the current AstraConfigStatus or error.
+// The returned AstraConfigStatus is sent back to Carbide
+// using the RecordNetworkStatus RPC.
 pub async fn update_weave_ew_vpc_astra_config(
     astra_config: Option<&AstraConfig>,
 ) -> eyre::Result<AstraConfigStatus> {
@@ -636,32 +707,32 @@ async fn update_weave_ew_vpc_astra_config_uds(
 }
 
 fn log_astra_config(astra_config: &AstraConfig) {
-    tracing::info!(
+    tracing::trace!(
         attachment_count = astra_config.astra_attachments.len(),
         "Input Astra config"
     );
     for astra_attachment in &astra_config.astra_attachments {
-        tracing::info!(?astra_attachment, "Input Astra config entry");
+        tracing::trace!(?astra_attachment, "Input Astra config entry");
     }
 }
 
 fn log_virtual_networks(virtual_networks: &[crate::weave_ew_vpc_client::proto::VirtualNetwork]) {
-    tracing::info!(
+    tracing::trace!(
         virtual_network_count = virtual_networks.len(),
         "List VNI response"
     );
     for virtual_network in virtual_networks {
-        tracing::info!(?virtual_network, "List VNI response entry");
+        tracing::trace!(?virtual_network, "List VNI response entry");
     }
 }
 
 fn log_virtual_network_attachments(virtual_network_attachments: &[VirtualNetworkAttachment]) {
-    tracing::info!(
+    tracing::trace!(
         virtual_network_attachment_count = virtual_network_attachments.len(),
         "List VNI attachment response"
     );
     for virtual_network_attachment in virtual_network_attachments {
-        tracing::info!(
+        tracing::trace!(
             ?virtual_network_attachment,
             "List VNI attachment response entry"
         );
@@ -1199,7 +1270,7 @@ mod tests {
     -> eyre::Result<()> {
         let (socket_path, calls) = start_recording_weave_ew_vpc_mock_server(
             vec![weave_ew_vpc_virtual_network_with_phase(
-                "pending-vni",
+                "astra-weave-vni-100",
                 100,
                 WeaveEwVpcPhase::Pending,
             )],
@@ -1272,7 +1343,7 @@ mod tests {
         let (socket_path, calls) = start_recording_weave_ew_vpc_mock_server(
             vec![
                 weave_ew_vpc_virtual_network("old-vni", 100),
-                weave_ew_vpc_virtual_network("new-vni", 200),
+                weave_ew_vpc_virtual_network("astra-weave-vni-200", 200),
             ],
             vec![weave_ew_vpc_virtual_network_attachment(
                 "old-attachment",
@@ -1314,7 +1385,7 @@ mod tests {
     async fn test_update_weave_ew_vpc_server_astra_config_keeps_matching_vni_and_attachment()
     -> eyre::Result<()> {
         let (socket_path, calls) = start_recording_weave_ew_vpc_mock_server(
-            vec![weave_ew_vpc_virtual_network("matching-vni", 100)],
+            vec![weave_ew_vpc_virtual_network("astra-weave-vni-100", 100)],
             vec![weave_ew_vpc_virtual_network_attachment(
                 "matching-attachment",
                 "02:aa:bb:cc:dd:ee",
@@ -1349,6 +1420,31 @@ mod tests {
         assert!(calls.delete_virtual_networks.is_empty());
         assert!(calls.create_virtual_network_attachments.is_empty());
         assert!(calls.delete_virtual_network_attachments.is_empty());
+
+        let (socket_path, calls) = start_recording_weave_ew_vpc_mock_server(
+            vec![weave_ew_vpc_virtual_network("matching-vni", 100)],
+            Vec::new(),
+        )
+        .await;
+        let socket_path = socket_path.to_str().unwrap();
+        let astra_config = rpc::AstraConfig {
+            astra_attachments: vec![astra_attachment("02:aa:bb:cc:dd:ee", 100)],
+        };
+
+        let status = update_weave_ew_vpc_astra_config_uds(socket_path, Some(&astra_config)).await?;
+        let calls = calls.lock().await;
+
+        assert_eq!(status.astra_attachments_status.len(), 1);
+        let astra_status = status.astra_attachments_status[0].status.as_ref().unwrap();
+        assert_eq!(astra_status.phase, rpc::AstraPhase::PhaseError as i32);
+        assert_eq!(
+            astra_status.reason,
+            "Conflicting DOCA Weave virtual network ID"
+        );
+        assert!(astra_status.message.contains("matching-vni"));
+        assert!(astra_status.message.contains("astra-weave-vni-100"));
+        assert!(calls.create_virtual_networks.is_empty());
+        assert!(calls.create_virtual_network_attachments.is_empty());
 
         Ok(())
     }
@@ -1458,7 +1554,7 @@ mod tests {
         run_update(config(vec![
             ("aa:bb:cc:dd:ee:10", 100),
             ("aa:bb:cc:dd:ee:20", 200),
-            ("as:bb:cc:dd:ee:30", 300),
+            ("aa:bb:cc:dd:ee:30", 300),
         ]))
         .await?;
         {
@@ -1475,7 +1571,7 @@ mod tests {
                     .as_ref()
                     .unwrap()
                     .nic_id,
-                "as:bb:cc:dd:ee:30"
+                "aa:bb:cc:dd:ee:30"
             );
             assert!(calls.delete_virtual_networks.is_empty());
             assert!(calls.delete_virtual_network_attachments.is_empty());
@@ -1485,7 +1581,7 @@ mod tests {
         run_update(config(vec![
             ("aa:bb:cc:dd:ee:10", 100),
             ("aa:bb:cc:dd:ee:20", 400),
-            ("as:bb:cc:dd:ee:30", 300),
+            ("aa:bb:cc:dd:ee:30", 300),
         ]))
         .await?;
         {
@@ -1516,7 +1612,7 @@ mod tests {
 
         run_update(config(vec![
             ("aa:bb:cc:dd:ee:20", 400),
-            ("as:bb:cc:dd:ee:30", 300),
+            ("aa:bb:cc:dd:ee:30", 300),
         ]))
         .await?;
         {
