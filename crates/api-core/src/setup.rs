@@ -1066,18 +1066,21 @@ async fn initialize_dpf_sdk(
     // unconditional, for unscoped we only cleanup if BF4 is not present.
     let bf4_configured = carbide_config.dpf.deployments.bf4_generic.is_some()
         || carbide_config.dpf.deployments.bf4_astra.is_some();
-    for (name, config) in init_configs.iter().filter(|(_, config)| {
-        matches!(
-            config.deployment_type(),
-            DpuDeploymentType::Bf3 | DpuDeploymentType::Bf3Gb200
-        )
-    }) {
-        if let Err(error) = sdk
-            .cleanup_stale_pf1_interfaces(config, bf4_configured)
-            .await
-        {
-            tracing::warn!(deployment = name, error = %error, "Failed to clean up obsolete PF1 interface");
-        }
+    let cleanup_configs = init_configs
+        .iter()
+        .filter(|(_, config)| {
+            matches!(
+                config.deployment_type(),
+                DpuDeploymentType::Bf3 | DpuDeploymentType::Bf3Gb200
+            )
+        })
+        .map(|(_, config)| config)
+        .collect::<Vec<_>>();
+    if let Err(error) = sdk
+        .cleanup_stale_pf1_interfaces(&cleanup_configs, bf4_configured)
+        .await
+    {
+        tracing::warn!(error = %error, "Failed to clean up obsolete PF1 interfaces");
     }
 
     Ok(Some(Arc::new(DpfSdkOps::new(

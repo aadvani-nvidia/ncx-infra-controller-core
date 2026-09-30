@@ -125,6 +125,9 @@ const BLUEFIELD_SOFTWARE_NAME_PREFIX: &str = "bf-software";
 /// DPU-cluster Node. Value format: `<namespace>_<deployment_name>`.
 const DPU_OWNED_BY_DEPLOYMENT_LABEL: &str = "svc.dpu.nvidia.com/owned-by-dpudeployment";
 const SERVICE_INTERFACE_MIGRATION_BLOCKED_LOG_DELAY: Duration = Duration::from_secs(10 * 60);
+// Bound optional startup cleanup to two minutes for the whole batch, including lookup,
+// delete, and finalizer polling, so stuck deletion cannot indefinitely delay the API listener.
+const STALE_PF1_INTERFACE_CLEANUP_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 const SERVICE_INTERFACE_DELETE_INITIAL_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const SERVICE_INTERFACE_DELETE_MAX_POLL_INTERVAL: Duration = Duration::from_secs(10);
 
@@ -2412,61 +2415,97 @@ impl<R: crate::repository::DpuServiceInterfaceRepository, L> DpfSdk<R, L> {
     /// DPF completes deletion. Only BF3 profiles are called here. Explicit PF1 inventories and
     /// VMaaS PF1 topology are preserved. Note that if `bf4_configured` is set
     /// then BF3 unscoped pf1 is not removed.
+    /// Deletes are submitted concurrently, with duplicate unscoped names
+    /// removed. Lookup, deletion, and polling share one two-minute
+    /// deadline for the entire batch. Expiry returns a timeout error.
     pub async fn cleanup_stale_pf1_interfaces(
         &self,
-        config: &InitDpfResourcesConfig,
+        configs: &[&InitDpfResourcesConfig],
         bf4_configured: bool,
     ) -> Result<(), DpfError> {
-        if !matches!(
-            config.deployment_type,
-            DpuDeploymentType::Bf3 | DpuDeploymentType::Bf3Gb200
-        ) {
-            return Ok(());
-        }
-        // Explicit VMaaS PF1 selections remain authoritative even on BF3.
-        if config.intercept_bridging.as_ref().is_some_and(|topology| {
-            topology
-                .interfaces()
-                .iter()
-                .any(|interface| interface.identity.pf_id == 1)
-        }) || resolve_initialization_inventory(config)?
-            .interfaces
-            .iter()
-            .any(|interface| interface.name == "pf1hpf")
-        {
-            return Ok(());
-        }
-
-        let name = if config.deployment_scoped_service_interfaces {
-            service_cr_name(
-                "pf1hpf",
-                service_interface_cr_suffix(config.deployment_type),
-            )
-        } else {
-            // BF4 still needs the shared, unscoped PF1 interface.
-            if bf4_configured {
-                return Ok(());
+        let mut names = Vec::new();
+        for config in configs {
+            if !matches!(
+                config.deployment_type,
+                DpuDeploymentType::Bf3 | DpuDeploymentType::Bf3Gb200
+            ) {
+                continue;
             }
-            "pf1hpf".to_string()
-        };
-        if crate::repository::DpuServiceInterfaceRepository::get(
-            &*self.repo,
-            &name,
-            &self.namespace,
-        )
-        .await?
-        .is_none()
-        {
+            // Explicit VMaaS PF1 selections remain authoritative even on BF3.
+            if config.intercept_bridging.as_ref().is_some_and(|topology| {
+                topology
+                    .interfaces()
+                    .iter()
+                    .any(|interface| interface.identity.pf_id == 1)
+            }) || resolve_initialization_inventory(config)?
+                .interfaces
+                .iter()
+                .any(|interface| interface.name == "pf1hpf")
+            {
+                // An explicit request protects the shared interface for every unscoped deployment.
+                if !config.deployment_scoped_service_interfaces {
+                    return Ok(());
+                }
+                continue;
+            }
+
+            let name = if config.deployment_scoped_service_interfaces {
+                service_cr_name(
+                    "pf1hpf",
+                    service_interface_cr_suffix(config.deployment_type),
+                )
+            } else {
+                // BF4 still needs the shared, unscoped PF1 interface.
+                if bf4_configured {
+                    continue;
+                }
+                "pf1hpf".to_string()
+            };
+            names.push(name);
+        }
+        names.sort();
+        names.dedup();
+        if names.is_empty() {
             return Ok(());
         }
-        tracing::info!(namespace = %self.namespace, service_interface = %name, "Deleting obsolete PF1 interface and waiting for DPF cleanup");
-        crate::repository::DpuServiceInterfaceRepository::delete(
-            &*self.repo,
-            &name,
-            &self.namespace,
-        )
-        .await?;
-        wait_for_service_interface_deletions(&*self.repo, &[name], &self.namespace).await
+        let cleanup = async {
+            let deletes = names.iter().map(|name| async move {
+                if crate::repository::DpuServiceInterfaceRepository::get(
+                    &*self.repo,
+                    name,
+                    &self.namespace,
+                )
+                .await?
+                .is_none()
+                {
+                    return Ok(());
+                }
+                tracing::info!(
+                    namespace = %self.namespace,
+                    service_interface = %name,
+                    "Deleting obsolete PF1 interface and waiting for DPF cleanup"
+                );
+                crate::repository::DpuServiceInterfaceRepository::delete(
+                    &*self.repo,
+                    name,
+                    &self.namespace,
+                )
+                .await
+            });
+            futures::future::try_join_all(deletes).await?;
+            wait_for_service_interface_deletions(&*self.repo, &names, &self.namespace).await
+        };
+        tokio::time::timeout(STALE_PF1_INTERFACE_CLEANUP_TIMEOUT, cleanup)
+            .await
+            .map_err(|_| {
+                DpfError::timeout(
+                    "stale PF1 interface cleanup",
+                    format!(
+                        "PF1 interfaces {names:?} in namespace {} were not cleaned up within two minutes",
+                        self.namespace,
+                    ),
+                )
+            })?
     }
 }
 

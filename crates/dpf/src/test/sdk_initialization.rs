@@ -76,6 +76,7 @@ struct InitializationMock {
     service_interfaces: Arc<DashMap<String, DPUServiceInterface>>,
     blocked_service_interface_deletes: Arc<DashMap<String, ()>>,
     deferred_service_interface_deletes: Arc<DashMap<String, ()>>,
+    service_interface_delete_requests: Arc<DashMap<String, usize>>,
     service_interface_delete_started: Arc<Notify>,
     service_interface_delete_release: Arc<Notify>,
     configs: Arc<DashMap<String, BTreeMap<String, String>>>,
@@ -439,6 +440,10 @@ impl DpuServiceInterfaceRepository for InitializationMock {
 
     async fn delete(&self, name: &str, ns: &str) -> Result<(), DpfError> {
         let key = ns_key(ns, name);
+        self.service_interface_delete_requests
+            .entry(key.clone())
+            .and_modify(|count| *count += 1)
+            .or_insert(1);
         if self.deferred_service_interface_deletes.contains_key(&key) {
             self.service_interface_delete_started.notify_one();
             return Ok(());
@@ -1491,7 +1496,7 @@ async fn stale_pf1_cleanup_checks_bf4_only_for_unscoped_interfaces() {
             deployment_scoped_service_interfaces: scoped,
             ..Default::default()
         };
-        sdk.cleanup_stale_pf1_interfaces(&config, bf4_configured)
+        sdk.cleanup_stale_pf1_interfaces(&[&config], bf4_configured)
             .await
             .unwrap();
         for name in ["pf1hpf", "pf1hpf-bf3", "pf1hpf-bf3gb200", "pf1hpf-bf4"] {
@@ -1547,7 +1552,7 @@ async fn stale_pf1_cleanup_preserves_requested_interfaces() {
                 .build_without_resources()
                 .await
                 .unwrap();
-        sdk.cleanup_stale_pf1_interfaces(&config, false)
+        sdk.cleanup_stale_pf1_interfaces(&[&config], false)
             .await
             .unwrap();
         assert!(
@@ -1575,17 +1580,123 @@ async fn stale_pf1_cleanup_waits_for_actual_deletion() {
         .await
         .unwrap();
     let cleanup = tokio::spawn(async move {
-        sdk.cleanup_stale_pf1_interfaces(&InitDpfResourcesConfig::default(), false)
+        sdk.cleanup_stale_pf1_interfaces(&[&InitDpfResourcesConfig::default()], false)
             .await
     });
     mock.service_interface_delete_started.notified().await;
-    tokio::time::advance(Duration::from_secs(600)).await;
+    tokio::time::advance(Duration::from_secs(1)).await;
     assert!(
         !cleanup.is_finished(),
         "cleanup must wait while the interface still exists"
     );
     mock.service_interfaces.remove(&ns_key(TEST_NS, "pf1hpf"));
     cleanup.await.unwrap().unwrap();
+}
+
+/// The deadline covers both a blocked delete request and accepted deletion with stuck finalizers.
+#[tokio::test(start_paused = true)]
+async fn stale_pf1_cleanup_times_out() {
+    for block_delete_request in [true, false] {
+        let mock = InitializationMock::default();
+        let definition = crate::sdk::build_dpu_interfaces_vec()
+            .into_iter()
+            .find(|interface| interface.name == "pf1hpf")
+            .unwrap();
+        let interface = crate::sdk::build_service_interface(&definition, TEST_NS);
+        mock.service_interfaces
+            .insert(resource_key(&interface), interface);
+        let deletes = if block_delete_request {
+            &mock.blocked_service_interface_deletes
+        } else {
+            &mock.deferred_service_interface_deletes
+        };
+        deletes.insert(ns_key(TEST_NS, "pf1hpf"), ());
+        let sdk =
+            crate::sdk::DpfSdkBuilder::new(mock.clone(), TEST_NS, "test-password".to_string())
+                .build_without_resources()
+                .await
+                .unwrap();
+        let cleanup = tokio::spawn(async move {
+            sdk.cleanup_stale_pf1_interfaces(&[&InitDpfResourcesConfig::default()], false)
+                .await
+        });
+        mock.service_interface_delete_started.notified().await;
+        tokio::time::advance(Duration::from_secs(119)).await;
+        assert!(
+            !cleanup.is_finished(),
+            "cleanup must allow the two-minute window"
+        );
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let error = cleanup.await.unwrap().unwrap_err();
+        assert!(matches!(error, DpfError::Timeout { ref details, .. }
+            if details.contains("sdk-init-ns") && details.contains("pf1hpf") && details.contains("two minutes")));
+        assert!(
+            mock.service_interfaces
+                .contains_key(&ns_key(TEST_NS, "pf1hpf")),
+            "timing out must leave the interface for DPF to finish deleting"
+        );
+    }
+}
+
+/// Send both scoped deletes before waiting, or a single deduplicated unscoped delete.
+/// The whole batch shares one two-minute deadline, even when delete requests are blocked.
+#[tokio::test(start_paused = true)]
+async fn stale_pf1_cleanup_batches_deletes_with_one_deadline() {
+    for scoped in [true, false] {
+        let mock = InitializationMock::default();
+        let definition = crate::sdk::build_dpu_interfaces_vec()
+            .into_iter()
+            .find(|interface| interface.name == "pf1hpf")
+            .unwrap();
+        let names = if scoped {
+            vec!["pf1hpf-bf3", "pf1hpf-bf3gb200"]
+        } else {
+            vec!["pf1hpf"]
+        };
+        for name in &names {
+            let mut interface = crate::sdk::build_service_interface(&definition, TEST_NS);
+            interface.metadata.name = Some((*name).to_string());
+            mock.service_interfaces
+                .insert(resource_key(&interface), interface);
+            mock.blocked_service_interface_deletes
+                .insert(ns_key(TEST_NS, name), ());
+        }
+        let sdk =
+            crate::sdk::DpfSdkBuilder::new(mock.clone(), TEST_NS, "test-password".to_string())
+                .build_without_resources()
+                .await
+                .unwrap();
+        let cleanup = tokio::spawn(async move {
+            let bf3 = InitDpfResourcesConfig {
+                deployment_scoped_service_interfaces: scoped,
+                ..Default::default()
+            };
+            let gb200 = InitDpfResourcesConfig {
+                deployment_type: DpuDeploymentType::Bf3Gb200,
+                deployment_scoped_service_interfaces: scoped,
+                ..Default::default()
+            };
+            sdk.cleanup_stale_pf1_interfaces(&[&bf3, &gb200], false)
+                .await
+        });
+        mock.service_interface_delete_started.notified().await;
+        assert_eq!(mock.service_interface_delete_requests.len(), names.len());
+        for name in &names {
+            assert_eq!(
+                *mock
+                    .service_interface_delete_requests
+                    .get(&ns_key(TEST_NS, name))
+                    .unwrap(),
+                1
+            );
+        }
+        tokio::time::advance(Duration::from_secs(119)).await;
+        assert!(!cleanup.is_finished());
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let error = cleanup.await.unwrap().unwrap_err();
+        assert!(matches!(error, DpfError::Timeout { ref details, .. }
+            if names.iter().all(|name| details.contains(name))));
+    }
 }
 
 #[tokio::test]
