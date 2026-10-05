@@ -1400,7 +1400,7 @@ mod tests {
         );
         assert_eq!(
             config["weaveFlowController"]["underlayConfigMapData"]["overlayNetworkPrefixLength"],
-            0
+            11
         );
         let underlay = &config["weaveFlowController"]["underlayConfigMapData"];
         assert_eq!(underlay["softwarePlaneIDBitLength"], 8);

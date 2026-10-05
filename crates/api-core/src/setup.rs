@@ -954,87 +954,86 @@ async fn initialize_dpf_sdk(
 
     // Builds the SDK init config for one DPUDeployment. BF4 uses a single
     // `BlueFieldSoftware` source whose CR carries the complete PSID→PLDM mapping.
-    let mut warned_about_weave_without_ewethers = false;
-    let mut make_init_config = |deployment: &crate::cfg::file::DpfDeploymentConfig,
-                                deployment_type: DpuDeploymentType,
-                                bluefield_software: Option<
-        carbide_dpf::BlueFieldSoftwareParams,
-    >| {
-        let services = carbide_config
-            .dpf
-            .resolved_services_for(deployment, deployment_type);
-        // Warn once when an Astra deployment has Weave services but no ewethers config.
-        if !warned_about_weave_without_ewethers
-            && deployment_type == DpuDeploymentType::Bf4Astra
-            && carbide_config.ewethers_config.is_none()
-            && services.extra.keys().any(|service| {
-                matches!(
-                    service,
-                    DpfExtraService::DocaWeaveDhcpAgent | DpfExtraService::DocaWeaveFlowController
+    let make_init_config =
+        |deployment: &crate::cfg::file::DpfDeploymentConfig,
+         deployment_type: DpuDeploymentType,
+         bluefield_software: Option<carbide_dpf::BlueFieldSoftwareParams>| {
+            let services = carbide_config
+                .dpf
+                .resolved_services_for(deployment, deployment_type);
+            // Warn when an Astra deployment has Weave services but no ewethers config.
+            if deployment_type == DpuDeploymentType::Bf4Astra
+                && carbide_config.ewethers_config.is_none()
+                && services.extra.keys().any(|service| {
+                    matches!(
+                        service,
+                        DpfExtraService::DocaWeaveDhcpAgent
+                            | DpfExtraService::DocaWeaveFlowController
+                    )
+                })
+            {
+                tracing::warn!(
+                    deployment = %deployment.deployment_name,
+                    "Weave services are configured without ewethers_config; NICo's DPA/Astra paths remain disabled. Configure ewethers with the appropriate enable flags and overlay subnet values"
+                );
+            }
+            let interfaces = match deployment_type {
+                DpuDeploymentType::Bf4Astra => &astra_interfaces,
+                DpuDeploymentType::Bf3 | DpuDeploymentType::Bf3Gb200 => &bf3_interfaces,
+                DpuDeploymentType::Bf4Generic => &bf4_interfaces,
+            };
+            let (service_vpc_slots, additional_managed_sf) = match deployment_type {
+                DpuDeploymentType::Bf4Astra => (carbide_dpf::ServiceVpcSlots::default(), 0),
+                DpuDeploymentType::Bf3
+                | DpuDeploymentType::Bf3Gb200
+                | DpuDeploymentType::Bf4Generic => (service_vpc_slots, additional_managed_sf),
+            };
+            let mut builder = carbide_dpf::InitDpfResourcesConfigBuilder::default()
+                .bfb_url(deployment.bfb_url.clone().unwrap_or_default())
+                .flavor_name(deployment.flavor_name.clone())
+                .deployment_name(deployment.deployment_name.clone())
+                .deployment_scoped_service_interfaces(
+                    carbide_config.dpf.deployment_scoped_service_interfaces,
+                )
+                .services(crate::dpf_services::mandatory_services(
+                    &services,
+                    &carbide_config.dpf.dpu_agent_bootstrap_ca,
+                    interfaces,
+                    service_vpc_slots,
+                    &carbide_config.node_auth,
+                    carbide_config.ewethers_config.as_ref(),
+                ))
+                .num_of_vfs(carbide_config.dpu_config.num_of_vfs)
+                .pf_total_sf_reserved(carbide_config.dpf.pf_total_sf_reserved)
+                .additional_managed_sf(additional_managed_sf)
+                .service_vpc_slots(service_vpc_slots)
+                .interfaces(interfaces.clone())
+                .extra_bfcfg_parameters(
+                    carbide_config.dpf.resolved_bfcfg_parameters_for(deployment),
+                )
+                .enable_delay_host_init(deployment.enable_delay_host_init)
+                .deployment_type(deployment_type);
+            if let Some(bluefield_software) = bluefield_software {
+                builder = builder.bluefield_software(bluefield_software);
+            }
+            if let Some(intercept_bridging) = match deployment_type {
+                DpuDeploymentType::Bf4Astra => None,
+                DpuDeploymentType::Bf3
+                | DpuDeploymentType::Bf3Gb200
+                | DpuDeploymentType::Bf4Generic => intercept_bridging.clone(),
+            } {
+                builder = builder.intercept_bridging(intercept_bridging);
+            }
+            if let Some(proxy) = carbide_config.dpf.proxy.clone() {
+                builder = builder.proxy(proxy);
+            }
+            builder.build().map_err(|err| {
+                eyre::eyre!(
+                    "invalid {} DPF initialization configuration: {err}",
+                    deployment.deployment_name
                 )
             })
-        {
-            warned_about_weave_without_ewethers = true;
-            tracing::warn!(
-                deployment = %deployment.deployment_name,
-                "Weave services are configured without ewethers_config; NICo's DPA/Astra paths remain disabled. Configure ewethers with the appropriate enable flags and overlay subnet values"
-            );
-        }
-        let interfaces = match deployment_type {
-            DpuDeploymentType::Bf4Astra => &astra_interfaces,
-            DpuDeploymentType::Bf3 | DpuDeploymentType::Bf3Gb200 => &bf3_interfaces,
-            DpuDeploymentType::Bf4Generic => &bf4_interfaces,
         };
-        let (service_vpc_slots, additional_managed_sf) = match deployment_type {
-            DpuDeploymentType::Bf4Astra => (carbide_dpf::ServiceVpcSlots::default(), 0),
-            DpuDeploymentType::Bf3
-            | DpuDeploymentType::Bf3Gb200
-            | DpuDeploymentType::Bf4Generic => (service_vpc_slots, additional_managed_sf),
-        };
-        let mut builder = carbide_dpf::InitDpfResourcesConfigBuilder::default()
-            .bfb_url(deployment.bfb_url.clone().unwrap_or_default())
-            .flavor_name(deployment.flavor_name.clone())
-            .deployment_name(deployment.deployment_name.clone())
-            .deployment_scoped_service_interfaces(
-                carbide_config.dpf.deployment_scoped_service_interfaces,
-            )
-            .services(crate::dpf_services::mandatory_services(
-                &services,
-                &carbide_config.dpf.dpu_agent_bootstrap_ca,
-                interfaces,
-                service_vpc_slots,
-                &carbide_config.node_auth,
-                carbide_config.ewethers_config.as_ref(),
-            ))
-            .num_of_vfs(carbide_config.dpu_config.num_of_vfs)
-            .pf_total_sf_reserved(carbide_config.dpf.pf_total_sf_reserved)
-            .additional_managed_sf(additional_managed_sf)
-            .service_vpc_slots(service_vpc_slots)
-            .interfaces(interfaces.clone())
-            .extra_bfcfg_parameters(carbide_config.dpf.resolved_bfcfg_parameters_for(deployment))
-            .enable_delay_host_init(deployment.enable_delay_host_init)
-            .deployment_type(deployment_type);
-        if let Some(bluefield_software) = bluefield_software {
-            builder = builder.bluefield_software(bluefield_software);
-        }
-        if let Some(intercept_bridging) = match deployment_type {
-            DpuDeploymentType::Bf4Astra => None,
-            DpuDeploymentType::Bf3
-            | DpuDeploymentType::Bf3Gb200
-            | DpuDeploymentType::Bf4Generic => intercept_bridging.clone(),
-        } {
-            builder = builder.intercept_bridging(intercept_bridging);
-        }
-        if let Some(proxy) = carbide_config.dpf.proxy.clone() {
-            builder = builder.proxy(proxy);
-        }
-        builder.build().map_err(|err| {
-            eyre::eyre!(
-                "invalid {} DPF initialization configuration: {err}",
-                deployment.deployment_name
-            )
-        })
-    };
 
     let bf3 = &carbide_config.dpf.deployments.bf3;
     let bf3_gb200 = bf3.bf3_gb200();
@@ -1131,10 +1130,10 @@ async fn initialize_dpf_sdk(
 
     Ok(Some(Arc::new(DpfSdkOps::new(
         Arc::new(sdk),
-        (
-            astra_config.underlay_rail_route_prefix_len,
-            astra_config.underlay_software_plane_route_prefix_len,
-        ),
+        carbide_dpf::AstraRoutePrefixes {
+            rail_route_prefix_len: astra_config.underlay_rail_route_prefix_len,
+            software_plane_route_prefix_len: astra_config.underlay_software_plane_route_prefix_len,
+        },
         db_pool,
         join_set,
     )?)))
