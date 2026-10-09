@@ -327,11 +327,19 @@ impl ExpectedInterfaceIpAllocation {
 ///
 /// Every role uses the same allocation and optional segment-guard fields. The
 /// role only supplies endpoint-specific interface type and primary behavior.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ExpectedInterface {
     /// MAC address used to match DHCP and discovered interface traffic to this
     /// declaration.
-    pub mac_address: MacAddress,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac_address: Option<MacAddress>,
+    /// Physical interface identifier, for example `C1-1-L1` in Cerebro database.
+    /// Required when `mac_address` is absent; both identifiers may be supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cerebro_ifname: Option<String>,
+    /// Optional logical interface name for consumers of the expected inventory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logical_ifname: Option<String>,
     /// Which machine endpoint owns this interface. Missing values retain the
     /// legacy host-interface behavior.
     #[serde(default, skip_serializing_if = "ExpectedInterfaceRole::is_host")]
@@ -376,11 +384,67 @@ pub struct ExpectedInterface {
     pub primary: Option<bool>,
 }
 
+impl<'de> Deserialize<'de> for ExpectedInterface {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(remote = "ExpectedInterface")]
+        struct UncheckedExpectedInterface {
+            mac_address: Option<MacAddress>,
+            cerebro_ifname: Option<String>,
+            logical_ifname: Option<String>,
+            #[serde(default)]
+            role: ExpectedInterfaceRole,
+            ip_allocation: Option<ExpectedInterfaceIpAllocation>,
+            network_segment_type: Option<NetworkSegmentType>,
+            nic_type: Option<String>,
+            fixed_ip: Option<IpAddr>,
+            fixed_mask: Option<String>,
+            #[serde(default, deserialize_with = "deserialize_optional_ip_addr_lossy")]
+            fixed_gateway: Option<IpAddr>,
+            primary: Option<bool>,
+        }
+        let interface = UncheckedExpectedInterface::deserialize(deserializer)?;
+        interface
+            .validate_identity()
+            .map_err(serde::de::Error::custom)?;
+        Ok(interface)
+    }
+}
+
 /// Compatibility name for callers that still use the original host-only
 /// interface vocabulary.
 pub type ExpectedHostNic = ExpectedInterface;
 
 impl ExpectedInterface {
+    /// A MAC is needed by the current allocation paths; Cerebro-only declarations remain inventory.
+    pub fn require_mac_address(&self) -> Result<MacAddress, &'static str> {
+        self.mac_address.ok_or(
+            "expected interface has no MAC address; Cerebro name resolution is not implemented",
+        )
+    }
+
+    pub fn validate_identity(&self) -> Result<(), &'static str> {
+        if self
+            .cerebro_ifname
+            .as_ref()
+            .is_some_and(|name| name.trim().is_empty())
+        {
+            return Err("cerebro_ifname must not be empty");
+        }
+        if self.mac_address.is_none() && self.cerebro_ifname.is_none() {
+            return Err("mac_address or cerebro_ifname is required");
+        }
+        Ok(())
+    }
+
+    /// Display the supplied MAC or Cerebro identifier without resolving a name to a MAC.
+    pub fn identity(&self) -> String {
+        self.mac_address
+            .map(|mac| mac.to_string())
+            .or_else(|| self.cerebro_ifname.clone())
+            .unwrap_or_default()
+    }
+
     /// Return the configured allocation policy or infer the legacy policy from
     /// the role and whether this interface has a fixed IP.
     ///
@@ -540,7 +604,7 @@ impl ExpectedMachine {
         };
 
         ExpectedInterface {
-            mac_address: self.bmc_mac_address,
+            mac_address: Some(self.bmc_mac_address),
             role: ExpectedInterfaceRole::HostBmc,
             ip_allocation,
             fixed_ip,
@@ -568,7 +632,7 @@ impl ExpectedMachine {
             Some(policy) => self.data.bmc_ip_allocation == policy.into(),
             None => compatibility.ip_allocation.is_none(),
         };
-        let agrees_with_compatibility = host_bmc.mac_address == self.bmc_mac_address
+        let agrees_with_compatibility = host_bmc.mac_address == Some(self.bmc_mac_address)
             && allocation_agrees_with_compatibility
             && host_bmc.resolved_ip_allocation() == compatibility.resolved_ip_allocation()
             && host_bmc.fixed_ip == compatibility.fixed_ip;
@@ -577,7 +641,7 @@ impl ExpectedMachine {
             host_bmc.fixed_ip = compatibility.fixed_ip;
         }
 
-        host_bmc.mac_address = self.bmc_mac_address;
+        host_bmc.mac_address = Some(self.bmc_mac_address);
         host_bmc.role = ExpectedInterfaceRole::HostBmc;
         host_bmc.primary = None;
         host_bmc
@@ -609,7 +673,7 @@ impl ExpectedMachine {
             .data
             .interfaces
             .iter()
-            .filter(|interface| interface.mac_address == mac_address);
+            .filter(|interface| interface.mac_address == Some(mac_address));
         interfaces
             .clone()
             .find(|interface| {
@@ -756,7 +820,7 @@ impl ExpectedMachine {
                         .unwrap_or(BmcIpAllocationType::Auto)
                 } else if previous_host_bmc.as_ref().is_some_and(|previous_host_bmc| {
                     let mut normalized_incoming = incoming_host_bmc.clone();
-                    normalized_incoming.mac_address = self.bmc_mac_address;
+                    normalized_incoming.mac_address = Some(self.bmc_mac_address);
                     normalized_incoming.role = ExpectedInterfaceRole::HostBmc;
                     normalized_incoming.primary = None;
                     normalized_incoming == *previous_host_bmc
@@ -802,7 +866,7 @@ impl ExpectedMachine {
             };
         }
 
-        host_bmc.mac_address = self.bmc_mac_address;
+        host_bmc.mac_address = Some(self.bmc_mac_address);
         host_bmc.role = ExpectedInterfaceRole::HostBmc;
         host_bmc.primary = None;
         if let Err(message) = host_bmc.validate_ip_allocation() {
@@ -892,7 +956,7 @@ impl ExpectedMachineData {
         self.interfaces
             .iter()
             .find(|interface| interface.role.is_host() && interface.primary == Some(true))
-            .map(|interface| interface.mac_address)
+            .and_then(|interface| interface.mac_address)
     }
 }
 
@@ -1137,7 +1201,7 @@ mod tests {
     fn expected_machine_deserializes_new_and_legacy_interface_fields() {
         let expected = || {
             vec![ExpectedInterface {
-                mac_address: "02:00:00:00:20:01".parse().unwrap(),
+                mac_address: Some("02:00:00:00:20:01".parse().unwrap()),
                 fixed_ip: Some("192.0.2.10".parse().unwrap()),
                 ..Default::default()
             }]
@@ -1212,7 +1276,7 @@ mod tests {
         assert_eq!(
             machines
                 .iter()
-                .map(|machine| machine.data.interfaces[0].mac_address)
+                .map(|machine| machine.data.interfaces[0].mac_address.unwrap())
                 .collect::<Vec<_>>(),
             vec![
                 "02:00:00:00:20:01".parse().unwrap(),
@@ -1280,11 +1344,62 @@ mod tests {
     #[test]
     fn expected_host_nic_alias_remains_source_compatible() {
         let legacy: ExpectedHostNic = ExpectedInterface {
-            mac_address: "AA:BB:CC:DD:EE:FF".parse().unwrap(),
+            mac_address: Some("AA:BB:CC:DD:EE:FF".parse().unwrap()),
             ..Default::default()
         };
 
-        assert_eq!(legacy.mac_address.to_string(), "AA:BB:CC:DD:EE:FF");
+        assert_eq!(legacy.mac_address.unwrap().to_string(), "AA:BB:CC:DD:EE:FF");
+    }
+
+    #[test]
+    fn expected_interface_identifiers_validate_and_round_trip() {
+        let mac = "AA:BB:CC:DD:EE:FF".parse().unwrap();
+        check_values(
+            [
+                Check {
+                    scenario: "legacy MAC-only declaration",
+                    input: serde_json::json!({"mac_address": "AA:BB:CC:DD:EE:FF"}),
+                    expect: Ok(ExpectedInterface {
+                        mac_address: Some(mac),
+                        ..Default::default()
+                    }),
+                },
+                Check {
+                    scenario: "Cerebro and logical names without a MAC",
+                    input: serde_json::json!({"cerebro_ifname": "C1-1-L1", "logical_ifname": "rail0"}),
+                    expect: Ok(ExpectedInterface {
+                        cerebro_ifname: Some("C1-1-L1".to_string()),
+                        logical_ifname: Some("rail0".to_string()),
+                        ..Default::default()
+                    }),
+                },
+                Check {
+                    scenario: "both identifiers are allowed",
+                    input: serde_json::json!({"mac_address": "AA:BB:CC:DD:EE:FF", "cerebro_ifname": "C1-1-L1"}),
+                    expect: Ok(ExpectedInterface {
+                        mac_address: Some(mac),
+                        cerebro_ifname: Some("C1-1-L1".to_string()),
+                        ..Default::default()
+                    }),
+                },
+                Check {
+                    scenario: "logical name alone does not identify the interface",
+                    input: serde_json::json!({"logical_ifname": "rail0"}),
+                    expect: Err("mac_address or cerebro_ifname is required".to_string()),
+                },
+                Check {
+                    scenario: "blank physical name is rejected",
+                    input: serde_json::json!({"cerebro_ifname": "   "}),
+                    expect: Err("cerebro_ifname must not be empty".to_string()),
+                },
+            ],
+            |input| {
+                let interface: ExpectedInterface =
+                    serde_json::from_value(input).map_err(|error| error.to_string())?;
+                serde_json::from_value(serde_json::to_value(interface).unwrap())
+                    .map_err(|error| error.to_string())
+            },
+        );
     }
 
     #[test]
@@ -1482,7 +1597,7 @@ mod tests {
             ],
             |declaration| {
                 let interface = ExpectedInterface {
-                    mac_address: "AA:BB:CC:DD:EE:FF".parse().unwrap(),
+                    mac_address: Some("AA:BB:CC:DD:EE:FF".parse().unwrap()),
                     ip_allocation: declaration.policy,
                     fixed_ip: declaration.fixed_ip,
                     ..Default::default()
@@ -1745,7 +1860,7 @@ mod tests {
     fn initial_allocation_selects_family_without_rewriting_declarations() {
         let mac_address = "AA:BB:CC:DD:EE:01".parse().unwrap();
         let legacy_v4 = ExpectedInterface {
-            mac_address,
+            mac_address: Some(mac_address),
             fixed_ip: Some("192.0.2.10".parse().unwrap()),
             fixed_mask: Some("255.255.255.0".to_string()),
             fixed_gateway: Some("192.0.2.1".parse().unwrap()),
@@ -1755,14 +1870,14 @@ mod tests {
             ..Default::default()
         };
         let explicit_v6 = ExpectedInterface {
-            mac_address,
+            mac_address: Some(mac_address),
             ip_allocation: Some(ExpectedInterfaceIpAllocation::Fixed),
             fixed_ip: Some("2001:db8::10".parse().unwrap()),
             network_segment_type: Some(NetworkSegmentType::Admin),
             ..Default::default()
         };
         let retained = ExpectedInterface {
-            mac_address,
+            mac_address: Some(mac_address),
             ip_allocation: Some(ExpectedInterfaceIpAllocation::Retained),
             ..Default::default()
         };
@@ -1825,7 +1940,7 @@ mod tests {
                     scenario: "legacy Dynamic override is authoritative",
                     input: (BmcIpAllocationType::Dynamic, None),
                     expect: ExpectedInterface {
-                        mac_address,
+                        mac_address: Some(mac_address),
                         role: ExpectedInterfaceRole::HostBmc,
                         ip_allocation: Some(ExpectedInterfaceIpAllocation::Dynamic),
                         network_segment_type: Some(NetworkSegmentType::Underlay),
@@ -1836,7 +1951,7 @@ mod tests {
                     scenario: "legacy Fixed IPv4 remains visible to the IPv6 caller",
                     input: (BmcIpAllocationType::Auto, Some(fixed_v4)),
                     expect: ExpectedInterface {
-                        mac_address,
+                        mac_address: Some(mac_address),
                         role: ExpectedInterfaceRole::HostBmc,
                         fixed_ip: Some(fixed_v4),
                         network_segment_type: Some(NetworkSegmentType::Underlay),
@@ -1853,12 +1968,12 @@ mod tests {
                         bmc_ip_address,
                         interfaces: vec![
                             ExpectedInterface {
-                                mac_address,
+                                mac_address: Some(mac_address),
                                 fixed_ip: Some("2001:db8::10".parse().unwrap()),
                                 ..Default::default()
                             },
                             ExpectedInterface {
-                                mac_address,
+                                mac_address: Some(mac_address),
                                 role: ExpectedInterfaceRole::HostBmc,
                                 ip_allocation: Some(ExpectedInterfaceIpAllocation::Retained),
                                 network_segment_type: Some(NetworkSegmentType::Underlay),
@@ -1886,7 +2001,7 @@ mod tests {
             bmc_mac_address,
             data: ExpectedMachineData {
                 interfaces: vec![ExpectedInterface {
-                    mac_address: bmc_mac_address,
+                    mac_address: Some(bmc_mac_address),
                     role: ExpectedInterfaceRole::HostBmc,
                     fixed_ip: Some(fixed_ip),
                     network_segment_type: Some(NetworkSegmentType::Underlay),
@@ -1940,7 +2055,7 @@ mod tests {
                    primary: Option<bool>|
          -> ExpectedInterface {
             ExpectedInterface {
-                mac_address: mac,
+                mac_address: Some(mac),
                 role,
                 primary,
                 ..Default::default()
@@ -2061,7 +2176,7 @@ mod tests {
 
         for case in cases {
             let nic = ExpectedInterface {
-                mac_address: "AA:BB:CC:00:00:01".parse().unwrap(),
+                mac_address: Some("AA:BB:CC:00:00:01".parse().unwrap()),
                 network_segment_type: case.network_segment_type,
                 nic_type: case.nic_type.map(String::from),
                 ..Default::default()

@@ -363,6 +363,11 @@ pub async fn create(
     txn: &mut PgConnection,
     machine: ExpectedMachine,
 ) -> DatabaseResult<ExpectedMachine> {
+    for interface in &machine.data.interfaces {
+        interface
+            .validate_identity()
+            .map_err(|message| DatabaseError::InvalidArgument(message.to_string()))?;
+    }
     let id = machine.id.unwrap_or_else(Uuid::new_v4);
     let query = "INSERT INTO expected_machines
             (id, bmc_mac_address, bmc_username, bmc_password, serial_number, fallback_dpu_serial_numbers, metadata_name, metadata_description, metadata_labels, sku_id, host_nics, rack_id, default_pause_ingestion_and_poweron, dpf_enabled, bmc_ip_address, bmc_retain_credentials, dpu_mode, bmc_ip_allocation, host_lifecycle_profile)
@@ -555,6 +560,11 @@ pub async fn clear(txn: &mut PgConnection) -> Result<(), DatabaseError> {
 /// Updates an existing expected machine. If id is set, matches by ID; otherwise matches by
 /// `bmc_mac_address`. Includes `bmc_ip_address` when the operator configures a static BMC IP.
 pub async fn update(txn: &mut PgConnection, machine: &ExpectedMachine) -> DatabaseResult<()> {
+    for interface in &machine.data.interfaces {
+        interface
+            .validate_identity()
+            .map_err(|message| DatabaseError::InvalidArgument(message.to_string()))?;
+    }
     macro_rules! update_expected_machine_query {
         ($where_clause:literal) => {
             concat!(

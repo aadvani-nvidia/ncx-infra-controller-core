@@ -828,7 +828,7 @@ async fn test_expected_interface_roles_and_policies_flow_through_dhcp_and_site_e
             .data
             .interfaces
             .iter()
-            .find(|interface| interface.mac_address == mac_address)
+            .find(|interface| interface.mac_address == Some(mac_address))
             .expect("the stored declaration should contain this interface");
         carbide_site_explorer::try_apply_expected_interface(
             &pool,
@@ -875,7 +875,7 @@ async fn test_host_bmc_identity_wins_expected_interface_mac_lookup(
                 serial_number: "EM-HOST-BMC-LOOKUP-001".into(),
                 bmc_ip_allocation: BmcIpAllocationType::Dynamic,
                 interfaces: vec![ExpectedInterface {
-                    mac_address: bmc_mac,
+                    mac_address: Some(bmc_mac),
                     role: ExpectedInterfaceRole::Host,
                     ip_allocation: Some(ExpectedInterfaceIpAllocation::Dynamic),
                     network_segment_type: Some(NetworkSegmentType::Underlay),
@@ -915,7 +915,7 @@ async fn test_host_bmc_identity_wins_expected_interface_mac_lookup(
     txn.rollback().await?;
     assert!(
         stored.data.interfaces.iter().any(|interface| {
-            interface.mac_address == bmc_mac && interface.role == ExpectedInterfaceRole::Host
+            interface.mac_address == Some(bmc_mac) && interface.role == ExpectedInterfaceRole::Host
         }),
         "the legacy conflicting Host declaration should survive the update",
     );
@@ -3557,7 +3557,7 @@ async fn test_dhcp_v6_reserved_prediction_promotion_serializes_primary_request(
     let predicted_mac = *mock_host.non_dpu_macs.first().unwrap();
     let mock_host = mock_host.with_expected_machine_data(ExpectedMachineData {
         interfaces: vec![ExpectedInterface {
-            mac_address: predicted_mac,
+            mac_address: Some(predicted_mac),
             primary: Some(true),
             ..Default::default()
         }],

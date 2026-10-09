@@ -2342,7 +2342,9 @@ impl MachineStateHandler {
         // The caller enumerates the declared CX9 NICs by index, so the expected
         // NIC for this card is simply the one at `nic_index`.
         let expected_nic = cx9_nics[nic_index as usize];
-        let mac_address = expected_nic.mac_address;
+        let mac_address = expected_nic
+            .require_mac_address()
+            .map_err(|message| StateHandlerError::InvalidState(message.to_string()))?;
 
         // Now enable EastWestControlEnabled on this card.
         redfish_client
@@ -2466,9 +2468,13 @@ impl MachineStateHandler {
             .iter()
             .filter(|nic| nic.nic_type.as_deref() == Some("CX9"))
             .collect();
-        let enabled_any_cx9 = !cx9_nics.is_empty();
+        let enabled_any_cx9 = cx9_nics.iter().any(|nic| nic.mac_address.is_some());
 
         for nic_index in 0..cx9_nics.len() {
+            // Keep the inventory index stable, but defer Cerebro-only declarations.
+            if cx9_nics[nic_index].mac_address.is_none() {
+                continue;
+            }
             if let Err(e) = self
                 .enable_astra_nic(nic_index as u8, mh_snapshot, ctx, &cx9_nics)
                 .await

@@ -55,15 +55,24 @@ async fn exercise_expected_machine_queries(
                 description: "populated projection fixture".to_string(),
                 labels: HashMap::from([("location".to_string(), "rack-1".to_string())]),
             },
-            interfaces: vec![ExpectedInterface {
-                mac_address: interface_mac,
-                ip_allocation: Some(ExpectedInterfaceIpAllocation::Fixed),
-                fixed_ip: Some("192.0.2.11".parse()?),
-                fixed_mask: Some("255.255.255.0".to_string()),
-                fixed_gateway: Some("192.0.2.1".parse()?),
-                primary: Some(true),
-                ..Default::default()
-            }],
+            interfaces: vec![
+                ExpectedInterface {
+                    mac_address: Some(interface_mac),
+                    cerebro_ifname: Some("C1-1-L1".to_string()),
+                    logical_ifname: Some("rail0".to_string()),
+                    ip_allocation: Some(ExpectedInterfaceIpAllocation::Fixed),
+                    fixed_ip: Some("192.0.2.11".parse()?),
+                    fixed_mask: Some("255.255.255.0".to_string()),
+                    fixed_gateway: Some("192.0.2.1".parse()?),
+                    primary: Some(true),
+                    ..Default::default()
+                },
+                ExpectedInterface {
+                    cerebro_ifname: Some("C1-1-L2".to_string()),
+                    logical_ifname: Some("rail1".to_string()),
+                    ..Default::default()
+                },
+            ],
             rack_id: Some(rack_id.clone()),
             default_pause_ingestion_and_poweron: Some(true),
             dpf_enabled: Some(false),

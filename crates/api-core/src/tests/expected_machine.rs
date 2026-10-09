@@ -2649,7 +2649,7 @@ async fn test_legacy_bmc_update_preserves_interface_behavior_and_restores_naming
         bmc_mac,
         &[common::api_fixtures::network_segment::FIXTURE_UNDERLAY_NETWORK_SEGMENT_GATEWAY.ip()],
         Some(model::expected_machine::ExpectedInterface {
-            mac_address: bmc_mac,
+            mac_address: Some(bmc_mac),
             role: ExpectedInterfaceRole::HostBmc,
             ..Default::default()
         }),
@@ -2867,7 +2867,7 @@ async fn test_add_with_host_nic_fixed_ip_creates_interface(
         .await?
         .expect("expected machine should exist");
     for expected_interface in &expected_machine.data.interfaces {
-        if expected_interface.mac_address == nic_mac {
+        if expected_interface.mac_address == Some(nic_mac) {
             carbide_site_explorer::try_apply_expected_interface(
                 &env.pool,
                 &expected_machine,
@@ -2932,7 +2932,7 @@ async fn expected_machine_with_pending_fixed_interface(
             },
             bmc_ip_address: role.is_host_bmc().then_some(fixed_ip),
             interfaces: vec![model::expected_machine::ExpectedInterface {
-                mac_address,
+                mac_address: Some(mac_address),
                 role,
                 ip_allocation: Some(ExpectedInterfaceIpAllocation::Fixed),
                 fixed_ip: Some(fixed_ip),
@@ -3046,7 +3046,7 @@ async fn test_site_explorer_skips_superseded_expected_interface_allocations(
                         .host_nics
                         .iter_mut()
                         .find(|interface| {
-                            interface.mac_address == declaration.mac_address.to_string()
+                            interface.mac_address == declaration.mac_address.unwrap().to_string()
                         })
                         .expect("the update should contain the expected interface");
                     interface.ip_allocation =
@@ -3054,7 +3054,7 @@ async fn test_site_explorer_skips_superseded_expected_interface_allocations(
                     interface.fixed_ip = None;
                 } else {
                     update.host_nics.retain(|interface| {
-                        interface.mac_address != declaration.mac_address.to_string()
+                        interface.mac_address != declaration.mac_address.unwrap().to_string()
                     });
                     update.replace_host_nics = true;
                 }
@@ -3111,7 +3111,7 @@ async fn test_site_explorer_skips_superseded_expected_interface_allocations(
         .await;
 
         assert!(
-            db::machine_interface::find_by_mac_address(&env.pool, declaration.mac_address)
+            db::machine_interface::find_by_mac_address(&env.pool, declaration.mac_address.unwrap())
                 .await?
                 .is_empty(),
             "case: {case}",
@@ -3163,7 +3163,7 @@ async fn test_site_explorer_holds_expected_machine_lock_through_address_applicat
         let id = captured
             .id
             .expect("the stored expected machine should have an ID");
-        let mac_address = declaration.mac_address;
+        let mac_address = declaration.mac_address.unwrap();
         let fixed_ip = declaration
             .fixed_ip
             .expect("the declaration has a fixed IP");
@@ -4897,7 +4897,7 @@ async fn test_create_missing_from_preallocates_interfaces(
             bmc_ip_address: Some(bmc_ip),
             interfaces: vec![model::expected_machine::ExpectedInterface {
                 network_segment_type: None,
-                mac_address: nic_mac,
+                mac_address: Some(nic_mac),
                 nic_type: Some("onboard".into()),
                 fixed_ip: Some(host_ip),
                 fixed_mask: None,
@@ -4936,7 +4936,7 @@ async fn test_create_missing_from_preallocates_interfaces(
         .data
         .interfaces
         .iter()
-        .filter(|interface| interface.mac_address != stored.bmc_mac_address)
+        .filter(|interface| interface.mac_address != Some(stored.bmc_mac_address))
     {
         carbide_site_explorer::try_apply_expected_interface(&env.pool, &stored, interface, None)
             .await;

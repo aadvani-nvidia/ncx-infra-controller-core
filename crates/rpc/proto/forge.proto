@@ -7454,6 +7454,11 @@ message ExpectedHostNic {
   option (carbide.codegen.v1.message_derive) = "serde::Serialize";
   option (carbide.codegen.v1.message_derive) = "serde::Deserialize";
   string mac_address = 1;
+  // Cerebro physical interface identifier (for example C1-1-L1).
+  // At least one of mac_address or cerebro_ifname must be supplied.
+  optional string cerebro_ifname = 10;
+  // Optional logical interface name; stored for inventory consumers.
+  optional string logical_ifname = 11;
   // Legacy free-form segment hint (bf3, onboard, oob, ...). Kept for backward
   // compatibility; declare `network_segment_type` instead, which wins.
   optional string nic_type = 2;
