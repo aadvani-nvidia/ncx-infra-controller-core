@@ -1577,52 +1577,46 @@ fn interface_fixed_mapping_raw() -> String {
         "0005:03:00.1,p1,C1-1-L2\n",
         "0005:03:00.2,p2,C1-1-L3\n",
         "0005:03:00.3,p3,C1-1-L4\n",
-        "\n",
         "0005:06:00.0,p0,C1-2-L1\n",
         "0005:06:00.1,p1,C1-2-L2\n",
         "0005:06:00.2,p2,C1-2-L3\n",
         "0005:06:00.3,p3,C1-2-L4\n",
-        "\n",
         "0004:03:00.0,p0,C3-1-L1\n",
         "0004:03:00.1,p1,C3-1-L2\n",
         "0004:03:00.2,p2,C3-1-L3\n",
         "0004:03:00.3,p3,C3-1-L4\n",
-        "\n",
         "0004:06:00.0,p0,C3-2-L1\n",
         "0004:06:00.1,p1,C3-2-L2\n",
         "0004:06:00.2,p2,C3-2-L3\n",
         "0004:06:00.3,p3,C3-2-L4\n",
-        "\n",
         "0001:03:00.0,p0,C5-1-L1\n",
         "0001:03:00.1,p1,C5-1-L2\n",
         "0001:03:00.2,p2,C5-1-L3\n",
         "0001:03:00.3,p3,C5-1-L4\n",
-        "\n",
         "0001:06:00.0,p0,C5-2-L1\n",
         "0001:06:00.1,p1,C5-2-L2\n",
         "0001:06:00.2,p2,C5-2-L3\n",
         "0001:06:00.3,p3,C5-2-L4\n",
-        "\n",
-        "0000:06:00.0,p0,C7-2-L1\n",
-        "0000:06:00.1,p1,C7-2-L2\n",
-        "0000:06:00.2,p2,C7-2-L3\n",
-        "0000:06:00.3,p3,C7-2-L4\n",
-        "\n",
         "0000:03:00.0,p0,C7-1-L1\n",
         "0000:03:00.1,p1,C7-1-L2\n",
         "0000:03:00.2,p2,C7-1-L3\n",
         "0000:03:00.3,p3,C7-1-L4\n",
+        "0000:06:00.0,p0,C7-2-L1\n",
+        "0000:06:00.1,p1,C7-2-L2\n",
+        "0000:06:00.2,p2,C7-2-L3\n",
+        "0000:06:00.3,p3,C7-2-L4\n",
     )
     .to_string()
 }
 
 fn ovs_script_raw() -> String {
+    // Keep YAML block indentation and place the selected script's shebang on this line.
     [
-        "{{- if and .dpu_device_underlay_rows (index .dpu_device_underlay_rows 0).cerebro_ifname -}}\n",
+        "{{ if and .dpu_device_underlay_rows (index .dpu_device_underlay_rows 0).cerebro_ifname }}",
         ovs_cerebro_script_raw(),
-        "{{- else -}}\n",
+        "{{ else }}",
         ovs_legacy_script_raw(),
-        "{{- end }}\n",
+        "{{ end }}\n",
     ]
     .concat()
 }
@@ -1706,11 +1700,9 @@ fn ovs_cerebro_script_raw() -> &'static str {
               _ovs-vsctl set Interface "$netdev_name" type=dpdk
               _ovs-vsctl set Interface "$netdev_name" mtu_request=9216
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane=true
-              _ovs-vsctl set Interface "$netdev_name
-              " external_ids:xplane-group-id="r${rail}swpln${sw_plane}"
+              _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-group-id="r${rail}swpln${sw_plane}"
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-uplink=true
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-plane-id="$hw_plane"
-
             done
           done
         done
@@ -1811,13 +1803,14 @@ fn ovs_legacy_script_raw() -> &'static str {
 }
 
 fn configure_xplane_network_script_raw() -> String {
+    // Go whitespace trimming here would remove the YAML block scalar's required newline.
     [
-        "{{- if and .dpu_device_underlay_rows (index .dpu_device_underlay_rows 0).cerebro_ifname -}}\n",
+        "{{ if and .dpu_device_underlay_rows (index .dpu_device_underlay_rows 0).cerebro_ifname }}",
         xplane_network_preamble_raw(),
         &xplane_cerebro_network_script_raw(),
-        "{{- else -}}\n",
+        "{{ else }}",
         &xplane_legacy_network_script_raw(),
-        "{{- end }}\n",
+        "{{ end }}\n",
     ]
     .concat()
 }
@@ -1938,6 +1931,9 @@ fn xplane_network_preamble_raw() -> &'static str {
         declare -A CEREBRO_BY_INTERFACE=()
         declare -A INTERFACE_BY_CEREBRO=()
         declare -A BRIDGE_BY_CEREBRO=()
+        # Names needing a new or corrected altname assignment. Names already
+        # owned by the expected netdev are skipped to avoid needless delete/add.
+        # Queue changes during validation and apply them only after all checks.
         declare -a ALTNAMES_TO_ADD=()
 
         # Retain any incomplete configuration files for debugging.
@@ -1954,7 +1950,7 @@ fn xplane_network_preamble_raw() -> &'static str {
     "#}
 }
 
-fn xplane_build_interface_mapping_arrays_script_raw() -> &'static str {
+fn xplane_build_interface_named_mappings_script_raw() -> &'static str {
     indoc::indoc! {r#"
         if [ ! -r "$MAPPING_FILE" ]; then
             echo "configure-xplane-network.sh: cannot read mapping file: $MAPPING_FILE" >&2
@@ -2085,54 +2081,36 @@ fn xplane_find_netdevs_and_build_altnames_script_raw() -> &'static str {
             seen_netdevs["$netdev_name"]=1
 
             # Check the live netdev and altname ownership before making changes.
+            # ALTNAMES_TO_ADD is a subset of INTERFACES where we remove
+            # interfaces that already have the altname configured previously
+            # and the netdev "owner" matches so don't need to redo it.
             ip -o link show dev "$netdev_name" >/dev/null || exit 1
             if link_info="$(ip -o link show dev "$interface_name" 2>/dev/null)"; then
                 read -r link_index owner link_details <<< "$link_info"
                 owner="${owner%:}"
                 owner="${owner%%@*}"
-                if [ "$owner" != "$netdev_name" ]; then
-                    echo "configure-xplane-network.sh: altname $interface_name is already owned by $owner" >&2
-                    exit 1
+                if [ "$owner" = "$netdev_name" ]; then
+                    continue
                 fi
-            else
-                ALTNAMES_TO_ADD+=("$interface_name")
             fi
+            ALTNAMES_TO_ADD+=("$interface_name")
         done
     "#}
 }
 
-fn xplane_build_lldp_tmp_configuration_script_raw() -> &'static str {
-    indoc::indoc! {r#"
-        lldp_dir="$(dirname -- "$LLDP_FILE")"
-        mkdir -p "$lldp_dir" || exit 1
-
-        LLDP_TMP_FILE="$(mktemp "$lldp_dir/.lldp-interfaces.conf.XXXXXX")" || exit 1
-
-        printf '%s\n' \
-            'configure system interface pattern *' \
-            'configure lldp portidsubtype macaddress' > "$LLDP_TMP_FILE" || exit 1
-        for interface_name in "${INTERFACES[@]}"; do
-            netdev_name="${NETDEV_BY_INTERFACES[$interface_name]}"
-            printf 'configure ports %s lldp portdescription "%s"\n' \
-                "$netdev_name" "${CEREBRO_BY_INTERFACE[$interface_name]}" \
-                >> "$LLDP_TMP_FILE" || exit 1
-        done
-
-        chmod 0644 "$LLDP_TMP_FILE" || exit 1
-    "#}
-}
-
-fn xplane_check_net_config_and_build_cerebro_bridges_script_raw() -> &'static str {
+fn xplane_check_net_config_and_build_bridge_by_cerebro_script_raw() -> &'static str {
     indoc::indoc! {r#"
         bridge_for_cerebro() {
-            local cerebro_name="$1" rail sw_plane interface_name
+            local cerebro_name="$1" rail sw_plane port interface_name
             for rail in 0 1 2 3; do
                 for sw_plane in 0 1; do
-                    interface_name="eth_r${rail}_p$((4 * sw_plane))"
-                    if [ "${CEREBRO_BY_INTERFACE[$interface_name]:-}" = "$cerebro_name" ]; then
-                        printf 'brcx-r%sswpln%s\n' "$rail" "$sw_plane"
-                        return 0
-                    fi
+                    for port in 0 1 2 3; do
+                        interface_name="eth_r${rail}_p$((4 * sw_plane + port))"
+                        if [ "${CEREBRO_BY_INTERFACE[$interface_name]:-}" = "$cerebro_name" ]; then
+                            printf 'brcx-r%sswpln%s\n' "$rail" "$sw_plane"
+                            return 0
+                        fi
+                    done
                 done
             done
             return 1
@@ -2178,6 +2156,7 @@ fn xplane_check_net_config_and_build_cerebro_bridges_script_raw() -> &'static st
         done
 
         declare -A seen_bridges=()
+        declare -A bridge_by_address=()
         for row in "${DPU_DEVICE_UNDERLAY_ROWS[@]}"; do
             IFS='|' read -r cerebro_ifname mac address gateway route1 route2 logical_ifname <<< "$row"
             [ -n "$address" ] || continue
@@ -2185,8 +2164,13 @@ fn xplane_check_net_config_and_build_cerebro_bridges_script_raw() -> &'static st
                 echo "configure-xplane-network.sh: no bridge found for Cerebro name $cerebro_ifname" >&2
                 exit 1
             }
-            if [[ -n "${seen_bridges[$bridge_name]:-}" ]]; then
-                echo "configure-xplane-network.sh: duplicate underlay entry for bridge $bridge_name" >&2
+            bridge_configuration="$address|$gateway|$route1|$route2"
+            if [[ -n "${seen_bridges[$bridge_name]:-}" && "${seen_bridges[$bridge_name]}" != "$bridge_configuration" ]]; then
+                echo "configure-xplane-network.sh: conflicting underlay entries for bridge $bridge_name" >&2
+                exit 1
+            fi
+            if [[ -n "${bridge_by_address[$address]:-}" && "${bridge_by_address[$address]}" != "$bridge_name" ]]; then
+                echo "configure-xplane-network.sh: address $address is shared by different bridges" >&2
                 exit 1
             fi
             if ! valid_ipv4_cidr "$address" || ! valid_ipv4 "$gateway" ||
@@ -2195,8 +2179,30 @@ fn xplane_check_net_config_and_build_cerebro_bridges_script_raw() -> &'static st
                 exit 1
             fi
             BRIDGE_BY_CEREBRO["$cerebro_ifname"]="$bridge_name"
-            seen_bridges["$bridge_name"]=1
+            seen_bridges["$bridge_name"]="$bridge_configuration"
+            bridge_by_address["$address"]="$bridge_name"
         done
+    "#}
+}
+
+fn xplane_build_lldp_tmp_configuration_script_raw() -> &'static str {
+    indoc::indoc! {r#"
+        lldp_dir="$(dirname -- "$LLDP_FILE")"
+        mkdir -p "$lldp_dir" || exit 1
+
+        LLDP_TMP_FILE="$(mktemp "$lldp_dir/.lldp-interfaces.conf.XXXXXX")" || exit 1
+
+        printf '%s\n' \
+            'configure system interface pattern *' \
+            'configure lldp portidsubtype macaddress' > "$LLDP_TMP_FILE" || exit 1
+        for interface_name in "${INTERFACES[@]}"; do
+            netdev_name="${NETDEV_BY_INTERFACES[$interface_name]}"
+            printf 'configure ports %s lldp portdescription "%s"\n' \
+                "$netdev_name" "${CEREBRO_BY_INTERFACE[$interface_name]}" \
+                >> "$LLDP_TMP_FILE" || exit 1
+        done
+
+        chmod 0644 "$LLDP_TMP_FILE" || exit 1
     "#}
 }
 
@@ -2205,6 +2211,8 @@ fn xplane_build_netplan_tmp_configuration_script_raw() -> &'static str {
         mkdir -p "$(dirname -- "$NETPLAN_FILE")" || exit 1
         # Preserve the active configuration until every lookup and write succeeds.
         netplan_tmp="$(mktemp "${NETPLAN_FILE}.tmp.XXXXXX")" || exit 1
+        # Each four-lane group repeats its bridge configuration; emit the bridge once.
+        declare -A written_bridges=()
         {
             printf '%s\n' 'network:' '  version: 2' '  ethernets:' || exit 1
 
@@ -2216,6 +2224,8 @@ fn xplane_build_netplan_tmp_configuration_script_raw() -> &'static str {
                     echo "configure-xplane-network.sh: no validated bridge for $cerebro_ifname" >&2
                     exit 1
                 fi
+                [[ -z "${written_bridges[$bridge_name]:-}" ]] || continue
+                written_bridges["$bridge_name"]=1
                 printf '%s\n' \
                     "    ${bridge_name}:" \
                     "      mtu: 9216" \
@@ -2231,15 +2241,42 @@ fn xplane_build_netplan_tmp_configuration_script_raw() -> &'static str {
     "#}
 }
 
-fn xplane_apply_netdev_altnames_script_raw() -> &'static str {
+fn xplane_execute_verified_network_configuration_script_raw() -> &'static str {
     indoc::indoc! {r#"
+        # At this point we have done as much verification can we can.
+        # Execute the changes and log if any failure.
         for interface_name in "${ALTNAMES_TO_ADD[@]}"; do
             netdev_name="${NETDEV_BY_INTERFACES[$interface_name]}"
+            # Recheck ownership because it may have changed since validation.
+            if link_info="$(ip -o link show dev "$interface_name" 2>/dev/null)"; then
+                read -r link_index owner link_details <<< "$link_info"
+                owner="${owner%:}"
+                owner="${owner%%@*}"
+                [ "$owner" != "$netdev_name" ] || continue
+                if ! ip link property del dev "$owner" altname "$interface_name"; then
+                    echo "configure-xplane-network.sh: failed to remove altname $interface_name from $owner" >&2
+                    continue
+                fi
+            fi
             if ! ip link property add dev "$netdev_name" altname "$interface_name"; then
                 echo "configure-xplane-network.sh: failed to set altname $interface_name on $netdev_name" >&2
-                exit 1
+                continue
             fi
         done
+
+        # Source OVS setup so it can use the discovered NETDEV_BY_INTERFACES array.
+        source "$OVS_CONFIG_SCRIPT"
+
+        # Both candidates are complete before replacing either active file.
+        mv -fT -- "$LLDP_TMP_FILE" "$LLDP_FILE" || exit 1
+        mv -fT -- "$netplan_tmp" "$NETPLAN_FILE" || exit 1
+
+        # Both candidates are installed; stop reporting retained temporary files on exit.
+        trap - EXIT
+
+        systemctl daemon-reload
+        systemctl restart lldpd.service
+        netplan apply
     "#}
 }
 
@@ -2272,25 +2309,18 @@ fn xplane_oob_network_wait_script_raw() -> &'static str {
 // verified, install the new configuration from the temporary files/buffers.
 fn xplane_cerebro_network_script_raw() -> String {
     [
-        xplane_build_interface_mapping_arrays_script_raw(),
+        // Validation: check mappings, netdevs, altname ownership, bridges, and addresses.
+        // Build the named mappings and queue altname changes without changing the network.
+        xplane_build_interface_named_mappings_script_raw(),
         xplane_find_netdevs_and_build_altnames_script_raw(),
-        xplane_check_net_config_and_build_cerebro_bridges_script_raw(),
+        xplane_check_net_config_and_build_bridge_by_cerebro_script_raw(),
+        // Preparation: generate both temporary files while keeping active files unchanged.
         xplane_build_lldp_tmp_configuration_script_raw(),
         xplane_build_netplan_tmp_configuration_script_raw(),
-        xplane_apply_netdev_altnames_script_raw(),
-        indoc::indoc! {r#"
-            # Source OVS setup so it can use the discovered NETDEV_BY_INTERFACES array.
-            source "$OVS_CONFIG_SCRIPT"
-
-            # Both candidates are complete before replacing either active file.
-            mv -fT -- "$LLDP_TMP_FILE" "$LLDP_FILE" || exit 1
-            mv -fT -- "$netplan_tmp" "$NETPLAN_FILE" || exit 1
-            trap - EXIT
-
-            systemctl daemon-reload
-            systemctl restart lldpd.service
-            netplan apply
-        "#},
+        // Execution: only after validation and generation succeed, apply the queued
+        // altnames, configure OVS, install both files, and reload/apply the services.
+        xplane_execute_verified_network_configuration_script_raw(),
+        // Wait for the OOB address to return after netplan apply.
         xplane_oob_network_wait_script_raw(),
     ]
     .concat()
@@ -2436,7 +2466,7 @@ mod tests {
                 format!("DPU_DEVICE_UNDERLAY_ROWS=({rows})\n"),
                 "declare -a INTERFACES=()\ndeclare -A PCI_BY_INTERFACE=() PHYS_PORT_BY_INTERFACE=() CEREBRO_BY_INTERFACE=() INTERFACE_BY_CEREBRO=()\n".to_string(),
                 "configure_mapping() {\n".to_string(),
-                xplane_build_interface_mapping_arrays_script_raw().to_string(),
+                xplane_build_interface_named_mappings_script_raw().to_string(),
                 "}\nconfigure_mapping\n".to_string(),
                 r#"for logical in "${INTERFACES[@]}"; do
     cerebro="${CEREBRO_BY_INTERFACE[$logical]}"
@@ -2453,14 +2483,89 @@ done
     }
 
     #[test]
+    fn xplane_altname_application_rechecks_ownership_and_continues_on_failure() {
+        let fixture =
+            std::env::temp_dir().join(format!("carbide-dpf-altnames-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&fixture).unwrap();
+        let calls = fixture.join("calls");
+        for (scenario, expected_calls) in [
+            ("unassigned", "add target\nadd second\nnetplan\n"),
+            ("new_owner", "del wrong\nadd target\nadd second\nnetplan\n"),
+            ("now_correct", "add second\nnetplan\n"),
+            ("delete_failure", "del wrong\nadd second\nnetplan\n"),
+            (
+                "add_failure",
+                "del wrong\nadd target\nadd second\nnetplan\n",
+            ),
+        ] {
+            fs::write(&calls, "").unwrap();
+            let setup = indoc::indoc! {r#"
+                        set -euo pipefail
+                        ALTNAMES_TO_ADD=(eth_r0_p0 eth_r0_p1)
+                        declare -A NETDEV_BY_INTERFACES=([eth_r0_p0]=target [eth_r0_p1]=second)
+                        OVS_CONFIG_SCRIPT=/dev/null
+                        LLDP_TMP_FILE=lldp.tmp
+                        LLDP_FILE=lldp.conf
+                        netplan_tmp=netplan.tmp
+                        NETPLAN_FILE=netplan.yaml
+                        mv() { :; }
+                        systemctl() { :; }
+                        netplan() { builtin printf 'netplan\n' >> "$TEST_CALLS"; }
+                        ip() {
+                            if [ "$1" = -o ]; then
+                                if [ "${@: -1}" = eth_r0_p1 ]; then return 1; fi
+                                if [ "$TEST_CASE" = unassigned ]; then return 1; fi
+                                if [ "$TEST_CASE" = now_correct ]; then
+                                    builtin printf '1: target@peer: mtu 9216\n'
+                                else
+                                    builtin printf '2: wrong@peer: mtu 9216\n'
+                                fi
+                            else
+                                builtin printf '%s %s\n' "$3" "$5" >> "$TEST_CALLS"
+                                if [ "$TEST_CASE" = delete_failure ] && [ "$3" = del ]; then return 1; fi
+                                if [ "$TEST_CASE" = add_failure ] && [ "$3" = add ] && [ "$5" = target ]; then return 1; fi
+                            fi
+                        }
+                    "#};
+            let script = format!(
+                "{setup}{}",
+                xplane_execute_verified_network_configuration_script_raw()
+            );
+            let output = Command::new("bash")
+                .arg("-c")
+                .arg(script)
+                .env("TEST_CALLS", &calls)
+                .env("TEST_CASE", scenario)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{scenario}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                fs::read_to_string(&calls).unwrap(),
+                expected_calls,
+                "{scenario}"
+            );
+            if scenario.ends_with("failure") {
+                assert!(String::from_utf8_lossy(&output.stderr).contains("eth_r0_p0"));
+            }
+        }
+        fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
     fn xplane_cerebro_checks_and_stages_files_before_changing_network() {
         for (scenario, succeeds) in [
             ("success", true),
+            ("shared_group_ip", true),
             ("existing_altname", true),
             ("missing_netdev", false),
-            ("conflicting_altname", false),
+            ("conflicting_altname", true),
             ("missing_ovs_port", false),
-            ("invalid_bridge", false),
+            ("shared_ip_across_bridges", false),
+            ("conflicting_group_ip", false),
             ("invalid_route", false),
             ("lldp_write", false),
             ("netplan_write", false),
@@ -2485,8 +2590,13 @@ done
                 } else {
                     format!("eth_r{}_p{}", index / 8, index % 8)
                 };
-                let address = if index == 0 || (scenario == "invalid_bridge" && index == 31) {
+                let address = if index == 0
+                    || (scenario == "shared_group_ip" && index < 4)
+                    || (scenario == "shared_ip_across_bridges" && index == 31)
+                {
                     "100.96.0.0/31"
+                } else if scenario == "conflicting_group_ip" && index == 1 {
+                    "100.96.0.2/31"
                 } else {
                     ""
                 };
@@ -2515,37 +2625,37 @@ done
             let end = start + preamble[start..].find("{{- end }}").unwrap() + "{{- end }}".len();
             preamble.replace_range(start..end, &rows.join("\n"));
             let stubs = indoc::indoc! {r#"
-                    ip() {
-                        if [ "$1" = -o ]; then
-                            dev="${@: -1}"
-                            if [[ "$dev" == eth_* || "$dev" == other_port ]]; then
-                                if [ "$TEST_CASE" = conflicting_altname ] && [ "$dev" = eth_r3_p7 ]; then
-                                    builtin printf '99: wrong_netdev: mtu 9216\n'
-                                elif [ "$TEST_CASE" = existing_altname ] && [ "$dev" = eth_r0_p0 ]; then
-                                    builtin printf '1: cx9_0: mtu 9216\n'
+                        ip() {
+                            if [ "$1" = -o ]; then
+                                dev="${@: -1}"
+                                if [[ "$dev" == eth_* || "$dev" == other_port ]]; then
+                                    if [ "$TEST_CASE" = conflicting_altname ] && [ "$dev" = eth_r3_p7 ]; then
+                                        builtin printf '99: wrong_netdev: mtu 9216\n'
+                                    elif [ "$TEST_CASE" = existing_altname ] && [ "$dev" = eth_r0_p0 ]; then
+                                        builtin printf '1: cx9_0: mtu 9216\n'
+                                    else
+                                        return 1
+                                    fi
                                 else
-                                    return 1
+                                    builtin printf '1: %s: mtu 9216\n' "$dev"
                                 fi
+                            elif [ "$1" = link ]; then
+                                builtin printf 'altname %s\n' "$*" >> "$TEST_CALLS"
                             else
-                                builtin printf '1: %s: mtu 9216\n' "$dev"
+                                builtin printf 'inet 192.0.2.1/24\n'
                             fi
-                        elif [ "$1" = link ]; then
-                            builtin printf 'altname %s\n' "$*" >> "$TEST_CALLS"
-                        else
-                            builtin printf 'inet 192.0.2.1/24\n'
-                        fi
-                    }
-                    printf() {
-                        if { [ "$TEST_CASE" = lldp_write ] && [[ "$1" == 'configure ports '* ]]; } ||
-                            { [ "$TEST_CASE" = netplan_write ] && [ "${2:-}" = network: ]; }; then
-                            builtin printf 'partial write\n'
-                            return 1
-                        fi
-                        builtin printf "$@"
-                    }
-                    systemctl() { builtin printf 'systemctl\n' >> "$TEST_CALLS"; }
-                    netplan() { builtin printf 'netplan\n' >> "$TEST_CALLS"; }
-                "#};
+                        }
+                        printf() {
+                            if { [ "$TEST_CASE" = lldp_write ] && [[ "$1" == 'configure ports '* ]]; } ||
+                                { [ "$TEST_CASE" = netplan_write ] && [ "${2:-}" = network: ]; }; then
+                                builtin printf 'partial write\n'
+                                return 1
+                            fi
+                            builtin printf "$@"
+                        }
+                        systemctl() { builtin printf 'systemctl\n' >> "$TEST_CALLS"; }
+                        netplan() { builtin printf 'netplan\n' >> "$TEST_CALLS"; }
+                    "#};
             let script = format!("{preamble}{stubs}{}", xplane_cerebro_network_script_raw());
             let output = Command::new("bash")
                 .arg("-c")
@@ -2570,7 +2680,7 @@ done
                 assert_eq!(
                     events
                         .lines()
-                        .filter(|line| line.starts_with("altname "))
+                        .filter(|line| line.starts_with("altname link property add "))
                         .count(),
                     if scenario == "existing_altname" {
                         31
@@ -2578,7 +2688,18 @@ done
                         32
                     }
                 );
-                assert!(!events.contains("property del"));
+                if scenario == "conflicting_altname" {
+                    let delete = events
+                        .find("property del dev wrong_netdev altname eth_r3_p7")
+                        .unwrap();
+                    let add = events
+                        .find("property add dev cx9_31 altname eth_r3_p7")
+                        .unwrap();
+                    assert!(delete < add);
+                    assert_eq!(events.matches("property del").count(), 1);
+                } else {
+                    assert!(!events.contains("property del"));
+                }
                 assert!(events.rfind("altname ").unwrap() < events.find("ovs\n").unwrap());
                 assert!(events.find("ovs\n").unwrap() < events.find("netplan\n").unwrap());
                 assert!(
@@ -2586,6 +2707,21 @@ done
                         .unwrap()
                         .contains("brcx-r0swpln0:")
                 );
+                if scenario == "shared_group_ip" {
+                    let configuration: serde_yaml::Value =
+                        serde_yaml::from_str(&fs::read_to_string(&netplan).unwrap()).unwrap();
+                    assert_eq!(
+                        configuration["network"]["ethernets"]
+                            .as_mapping()
+                            .unwrap()
+                            .len(),
+                        1
+                    );
+                    assert_eq!(
+                        configuration["network"]["ethernets"]["brcx-r0swpln0"]["addresses"][0],
+                        "100.96.0.0/31"
+                    );
+                }
             } else {
                 assert!(
                     events.is_empty(),

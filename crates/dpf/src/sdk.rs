@@ -2885,7 +2885,7 @@ fn astra_underlay_configuration(
     astra_nics: &[&ExpectedInterface],
     route_prefixes: AstraRoutePrefixes,
 ) -> Result<BTreeMap<String, serde_json::Value>, DpfError> {
-    let mut seen_ips = BTreeSet::new();
+    let mut seen_ips = BTreeMap::new();
     let mut seen_macs = BTreeSet::new();
     let mut dpu_device_underlay_rows = Vec::with_capacity(astra_nics.len());
     for (index, nic) in astra_nics.iter().enumerate() {
@@ -2900,12 +2900,20 @@ fn astra_underlay_configuration(
             ));
         }
 
-        // Only addressed ports need routes; retain other ports for interface mapping.
+        // The four Cerebro lanes in a group share their bridge's IP and routes.
+        let cerebro_group = nic
+            .cerebro_ifname
+            .as_deref()
+            .and_then(|name| name.rsplit_once("-L"))
+            .filter(|(group, lane)| !group.is_empty() && matches!(*lane, "1" | "2" | "3" | "4"))
+            .map(|(group, _)| group);
         let (ip, gateway, rail_route, sw_plane_route) = match nic.fixed_ip {
             Some(IpAddr::V4(ip)) => {
-                if !seen_ips.insert(ip) {
+                if let Some(previous_group) = seen_ips.insert(ip, cerebro_group)
+                    && (cerebro_group.is_none() || previous_group != cerebro_group)
+                {
                     return Err(DpfError::ConfigError(
-                        "Astra underlay IPs must be unique".to_string(),
+                        "Astra underlay IPs must be unique across bridge groups".to_string(),
                     ));
                 }
                 let rail_network =
@@ -5756,6 +5764,37 @@ mod tests {
     }
 
     #[test]
+    fn astra_dpu_device_underlay_rows_allow_shared_ip_within_cerebro_group() {
+        let mut nics = astra_declared_interfaces();
+        for group in nics.chunks_mut(4) {
+            let shared_ip = group[0].fixed_ip;
+            for nic in group {
+                nic.fixed_ip = shared_ip;
+                nic.mac_address = None;
+            }
+        }
+        let values = astra_underlay_configuration(
+            "dpu-001",
+            &nics.iter().collect::<Vec<_>>(),
+            AstraRoutePrefixes {
+                rail_route_prefix_len: 16,
+                software_plane_route_prefix_len: 13,
+            },
+        )
+        .unwrap();
+        let rows = values["dpu_device_underlay_rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 32);
+        for group in rows.chunks(4) {
+            assert!(!group[0]["ip"].as_str().unwrap().is_empty());
+            for row in group {
+                for key in ["ip", "gateway", "rail_route", "sw_plane_route"] {
+                    assert_eq!(row[key], group[0][key]);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn astra_dpu_device_underlay_rows_reject_duplicate_mac_and_ip() {
         use carbide_test_support::{Check, check_values};
         check_values(
@@ -5763,7 +5802,7 @@ mod tests {
                 Check {
                     scenario: "duplicate configured IP",
                     input: true,
-                    expect: "Astra underlay IPs must be unique".to_string(),
+                    expect: "Astra underlay IPs must be unique across bridge groups".to_string(),
                 },
                 Check {
                     scenario: "duplicate supplied MAC",
