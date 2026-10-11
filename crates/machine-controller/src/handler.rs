@@ -2394,7 +2394,7 @@ impl MachineStateHandler {
                 "Fixed IP not found for Astra enablement"
             );
             return Err(StateHandlerError::GenericError(eyre!(
-                "fixed IP not found for Astra enablement"
+                "fixed IP not found for astra enablement"
             )));
         };
 
@@ -2412,7 +2412,7 @@ impl MachineStateHandler {
                 "DPU PCI address not found for Astra enablement"
             );
             return Err(StateHandlerError::GenericError(eyre!(
-                "DPU PCI address not found for Astra enablement"
+                "DPU PCI address not found for astra enablement"
             )));
         };
 
