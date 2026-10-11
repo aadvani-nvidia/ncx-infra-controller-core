@@ -90,17 +90,16 @@ async fn update_preallocated_expected_machine_interface_inner(
     expected_interface: &ExpectedInterface,
     retained_window: Option<chrono::Duration>,
 ) -> Result<PreallocationSuccess, CarbideError> {
-    // A fixed-address reservation is keyed by the interface MAC, so it cannot be
-    // created for a MAC-less declaration.
-    let mac_address = expected_interface.mac_address.ok_or_else(|| {
-        CarbideError::InvalidArgument(
-            "expected interface: a fixed-address reservation requires a MAC address".to_string(),
-        )
-    })?;
+    let mac_address = expected_interface
+        .require_mac_address()
+        .map_err(|message| CarbideError::InvalidArgument(message.to_string()))?;
     let fixed_ip = expected_interface
         .fixed_reservation_ip()
         .map_err(|message| {
-            CarbideError::InvalidArgument(format!("expected interface {mac_address}: {message}"))
+            CarbideError::InvalidArgument(format!(
+                "expected interface {}: {message}",
+                expected_interface.identity(),
+            ))
         })?;
 
     // Updates process declarations in request order. Release locks from a

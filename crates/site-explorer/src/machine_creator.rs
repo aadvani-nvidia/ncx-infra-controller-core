@@ -2016,7 +2016,7 @@ mod tests {
             MacAddress::new([0x00, 0x62, 0x0b, 0x4c, 0x28, 0xaa]),
             MacAddress::new([0x00, 0x62, 0x0b, 0x4c, 0x28, 0xab]),
         ];
-        let interface = |mac_address: MacAddress, role| ExpectedInterface {
+        let interface = |mac_address, role| ExpectedInterface {
             mac_address: Some(mac_address),
             role,
             ..Default::default()

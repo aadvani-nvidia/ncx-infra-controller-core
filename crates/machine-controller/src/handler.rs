@@ -2318,33 +2318,14 @@ impl MachineStateHandler {
         }
     }
 
-    // Function to return a cage index given a NIC index in Astra.
-    // Cage index is ((nic_index / 2) * 2) + 1
-    #[allow(dead_code)]
-    fn astra_get_cage_index(nic_index: u8) -> u8 {
-        ((nic_index / 2) * 2) + 1
-    }
-
-    // Function to return an MPO index given a NIC index in Astra.
-    // MPO index is (nic_index / 2) + 1
-    #[allow(dead_code)]
-    fn astra_get_mpo_index(nic_index: u8) -> u8 {
-        (nic_index / 2) + 1
-    }
-
-    // Function to return a string with Cage and MPO numbers encoded
-    // given a NIC index in Astra.
-    #[allow(dead_code)]
-    fn astra_get_cage_mpo_encoded_string(nic_index: u8) -> String {
-        let cage_index = Self::astra_get_cage_index(nic_index);
-        let mpo_index = Self::astra_get_mpo_index(nic_index);
-        format!("C{cage_index}_{mpo_index}")
-    }
-
     /// Enables Astra on a single NIC.
     /// We pass in the expected interfaces and the NIC index to enable Astra on.
     /// Returns `true` when the NIC was enabled and the caller
     /// should AC-power-cycle the host for the change to take effect.
+    /// This routine uses Redfish to get the MAC address of the given NIC. It also
+    /// uses the Redfish interface to set EastWestControlEnabled on the given NIC.
+    /// It uses the Astra NIC mapping to get the DPU PCI address for the given NIC.
+    /// Finally, it adds an entry for this NIC in the dpa_interface table.
     async fn enable_astra_nic(
         &self,
         nic_index: u8,
@@ -2386,7 +2367,8 @@ impl MachineStateHandler {
             .await
             .map_err(|e| redfish_error("set_spx_nic_east_west_control_enabled", e))?;
 
-        let cage_mpo_encoded_string = Self::astra_get_cage_mpo_encoded_string(nic_index);
+        let cage_mpo_encoded_string =
+            model::machine::astra::astra_get_cage_mpo_encoded_string(nic_index);
 
         // We have to search through the cx9_nics array for all interfaces whose name starts with the cage_mpo_encoded_string.
         // The entry in the cx9_nics array has this format:
@@ -2520,9 +2502,13 @@ impl MachineStateHandler {
             .iter()
             .filter(|nic| nic.nic_type.as_deref() == Some("CX9"))
             .collect();
-        let enabled_any_cx9 = !cx9_nics.is_empty();
+        let enabled_any_cx9 = cx9_nics.iter().any(|nic| nic.mac_address.is_some());
 
         for nic_index in 0..cx9_nics.len() {
+            // Keep the inventory index stable, but defer Cerebro-only declarations.
+            if cx9_nics[nic_index].mac_address.is_none() {
+                continue;
+            }
             if let Err(e) = self
                 .enable_astra_nic(nic_index as u8, mh_snapshot, ctx, &cx9_nics)
                 .await

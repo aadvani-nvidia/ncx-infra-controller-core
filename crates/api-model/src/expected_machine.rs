@@ -327,12 +327,18 @@ impl ExpectedInterfaceIpAllocation {
 ///
 /// Every role uses the same allocation and optional segment-guard fields. The
 /// role only supplies endpoint-specific interface type and primary behavior.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ExpectedInterface {
     /// MAC address used to match DHCP and discovered interface traffic to this
     /// declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mac_address: Option<MacAddress>,
+    /// Physical interface identifier, for example `C1-1-L1` in Cerebro database.
+    /// Required when `mac_address` is absent; both identifiers may be supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cerebro_ifname: Option<String>,
+    /// Optional logical interface name for consumers of the expected inventory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logical_ifname: Option<String>,
     /// Which machine endpoint owns this interface. Missing values retain the
     /// legacy host-interface behavior.
@@ -378,11 +384,67 @@ pub struct ExpectedInterface {
     pub primary: Option<bool>,
 }
 
+impl<'de> Deserialize<'de> for ExpectedInterface {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(remote = "ExpectedInterface")]
+        struct UncheckedExpectedInterface {
+            mac_address: Option<MacAddress>,
+            cerebro_ifname: Option<String>,
+            logical_ifname: Option<String>,
+            #[serde(default)]
+            role: ExpectedInterfaceRole,
+            ip_allocation: Option<ExpectedInterfaceIpAllocation>,
+            network_segment_type: Option<NetworkSegmentType>,
+            nic_type: Option<String>,
+            fixed_ip: Option<IpAddr>,
+            fixed_mask: Option<String>,
+            #[serde(default, deserialize_with = "deserialize_optional_ip_addr_lossy")]
+            fixed_gateway: Option<IpAddr>,
+            primary: Option<bool>,
+        }
+        let interface = UncheckedExpectedInterface::deserialize(deserializer)?;
+        interface
+            .validate_identity()
+            .map_err(serde::de::Error::custom)?;
+        Ok(interface)
+    }
+}
+
 /// Compatibility name for callers that still use the original host-only
 /// interface vocabulary.
 pub type ExpectedHostNic = ExpectedInterface;
 
 impl ExpectedInterface {
+    /// A MAC is needed by the current allocation paths; Cerebro-only declarations remain inventory.
+    pub fn require_mac_address(&self) -> Result<MacAddress, &'static str> {
+        self.mac_address.ok_or(
+            "expected interface has no MAC address; Cerebro name resolution is not implemented",
+        )
+    }
+
+    pub fn validate_identity(&self) -> Result<(), &'static str> {
+        if self
+            .cerebro_ifname
+            .as_ref()
+            .is_some_and(|name| name.trim().is_empty())
+        {
+            return Err("cerebro_ifname must not be empty");
+        }
+        if self.mac_address.is_none() && self.cerebro_ifname.is_none() {
+            return Err("mac_address or cerebro_ifname is required");
+        }
+        Ok(())
+    }
+
+    /// Display the supplied MAC or Cerebro identifier without resolving a name to a MAC.
+    pub fn identity(&self) -> String {
+        self.mac_address
+            .map(|mac| mac.to_string())
+            .or_else(|| self.cerebro_ifname.clone())
+            .unwrap_or_default()
+    }
+
     /// Return the configured allocation policy or infer the legacy policy from
     /// the role and whether this interface has a fixed IP.
     ///
@@ -1294,6 +1356,57 @@ mod tests {
         };
 
         assert_eq!(legacy.mac_address.unwrap().to_string(), "AA:BB:CC:DD:EE:FF");
+    }
+
+    #[test]
+    fn expected_interface_identifiers_validate_and_round_trip() {
+        let mac = "AA:BB:CC:DD:EE:FF".parse().unwrap();
+        check_values(
+            [
+                Check {
+                    scenario: "legacy MAC-only declaration",
+                    input: serde_json::json!({"mac_address": "AA:BB:CC:DD:EE:FF"}),
+                    expect: Ok(ExpectedInterface {
+                        mac_address: Some(mac),
+                        ..Default::default()
+                    }),
+                },
+                Check {
+                    scenario: "Cerebro and logical names without a MAC",
+                    input: serde_json::json!({"cerebro_ifname": "C1-1-L1", "logical_ifname": "rail0"}),
+                    expect: Ok(ExpectedInterface {
+                        cerebro_ifname: Some("C1-1-L1".to_string()),
+                        logical_ifname: Some("rail0".to_string()),
+                        ..Default::default()
+                    }),
+                },
+                Check {
+                    scenario: "both identifiers are allowed",
+                    input: serde_json::json!({"mac_address": "AA:BB:CC:DD:EE:FF", "cerebro_ifname": "C1-1-L1"}),
+                    expect: Ok(ExpectedInterface {
+                        mac_address: Some(mac),
+                        cerebro_ifname: Some("C1-1-L1".to_string()),
+                        ..Default::default()
+                    }),
+                },
+                Check {
+                    scenario: "logical name alone does not identify the interface",
+                    input: serde_json::json!({"logical_ifname": "rail0"}),
+                    expect: Err("mac_address or cerebro_ifname is required".to_string()),
+                },
+                Check {
+                    scenario: "blank physical name is rejected",
+                    input: serde_json::json!({"cerebro_ifname": "   "}),
+                    expect: Err("cerebro_ifname must not be empty".to_string()),
+                },
+            ],
+            |input| {
+                let interface: ExpectedInterface =
+                    serde_json::from_value(input).map_err(|error| error.to_string())?;
+                serde_json::from_value(serde_json::to_value(interface).unwrap())
+                    .map_err(|error| error.to_string())
+            },
+        );
     }
 
     #[test]

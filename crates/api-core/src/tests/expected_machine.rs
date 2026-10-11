@@ -3047,7 +3047,8 @@ async fn test_site_explorer_skips_superseded_expected_interface_allocations(
                         .host_nics
                         .iter_mut()
                         .find(|interface| {
-                            interface.mac_address == declaration.mac_address.map(|m| m.to_string())
+                            interface.mac_address
+                                == Some(declaration.mac_address.unwrap().to_string())
                         })
                         .expect("the update should contain the expected interface");
                     interface.ip_allocation =
@@ -3055,7 +3056,7 @@ async fn test_site_explorer_skips_superseded_expected_interface_allocations(
                     interface.fixed_ip = None;
                 } else {
                     update.host_nics.retain(|interface| {
-                        interface.mac_address != declaration.mac_address.map(|m| m.to_string())
+                        interface.mac_address != Some(declaration.mac_address.unwrap().to_string())
                     });
                     update.replace_host_nics = true;
                 }
@@ -3112,14 +3113,9 @@ async fn test_site_explorer_skips_superseded_expected_interface_allocations(
         .await;
 
         assert!(
-            db::machine_interface::find_by_mac_address(
-                &env.pool,
-                declaration
-                    .mac_address
-                    .expect("the declaration has a MAC address"),
-            )
-            .await?
-            .is_empty(),
+            db::machine_interface::find_by_mac_address(&env.pool, declaration.mac_address.unwrap())
+                .await?
+                .is_empty(),
             "case: {case}",
         );
     }
@@ -3169,9 +3165,7 @@ async fn test_site_explorer_holds_expected_machine_lock_through_address_applicat
         let id = captured
             .id
             .expect("the stored expected machine should have an ID");
-        let mac_address = declaration
-            .mac_address
-            .expect("the declaration has a MAC address");
+        let mac_address = declaration.mac_address.unwrap();
         let fixed_ip = declaration
             .fixed_ip
             .expect("the declaration has a fixed IP");

@@ -1183,13 +1183,8 @@ async fn test_expected_interface_role_controls_fixed_preallocation(
 
         let mut txn = db::Transaction::begin(&pool).await?;
         preallocate_expected_machine_interface(txn.as_pgconn(), &expected_interface, None).await?;
-        let interfaces = find_by_mac_address(
-            txn.as_pgconn(),
-            expected_interface
-                .mac_address
-                .expect("test interface declares a MAC address"),
-        )
-        .await?;
+        let interfaces =
+            find_by_mac_address(txn.as_pgconn(), expected_interface.mac_address.unwrap()).await?;
         txn.commit().await?;
 
         assert_eq!(interfaces.len(), 1, "case: {name}");
@@ -1231,16 +1226,12 @@ async fn test_fixed_host_preallocation_does_not_override_machine_wide_primary_se
 
     let mut txn = db::Transaction::begin(&pool).await?;
     preallocate_expected_machine_interface(txn.as_pgconn(), &expected_interface, None).await?;
-    let interface_id = find_by_mac_address(
-        txn.as_pgconn(),
-        expected_interface
-            .mac_address
-            .expect("test interface declares a MAC address"),
-    )
-    .await?
-    .pop()
-    .expect("fixed Host preallocation should create an interface")
-    .id;
+    let interface_id =
+        find_by_mac_address(txn.as_pgconn(), expected_interface.mac_address.unwrap())
+            .await?
+            .pop()
+            .expect("fixed Host preallocation should create an interface")
+            .id;
 
     // DHCP applies the ExpectedMachine-wide primary declaration. A later Site
     // Explorer pass must not replace it with the Host creation default.
@@ -1278,17 +1269,14 @@ async fn test_fixed_preallocation_resolves_managed_prefix_and_segment_type(
         ..Default::default()
     };
     preallocate_expected_machine_interface(txn.as_pgconn(), &legacy_hint, None).await?;
-    let legacy_hint_mac = legacy_hint
-        .mac_address
-        .expect("test interface declares a MAC address");
-    let interface = find_by_mac_address(txn.as_pgconn(), legacy_hint_mac)
+    let interface = find_by_mac_address(txn.as_pgconn(), legacy_hint.mac_address.unwrap())
         .await?
         .pop()
         .expect("legacy fixed interface should be preallocated");
     assert_eq!(interface.segment_id, underlay_segment);
     let reconciled = validate_existing_mac_and_create(
         txn.as_pgconn(),
-        legacy_hint_mac,
+        legacy_hint.mac_address.unwrap(),
         &["198.51.100.1".parse()?],
         Some(legacy_hint.clone()),
         None,
@@ -1306,15 +1294,11 @@ async fn test_fixed_preallocation_resolves_managed_prefix_and_segment_type(
         ..Default::default()
     };
     preallocate_expected_machine_interface(txn.as_pgconn(), &legacy_typed_segment, None).await?;
-    let legacy_interface = find_by_mac_address(
-        txn.as_pgconn(),
-        legacy_typed_segment
-            .mac_address
-            .expect("test interface declares a MAC address"),
-    )
-    .await?
-    .pop()
-    .expect("legacy fixed interface should be preallocated");
+    let legacy_interface =
+        find_by_mac_address(txn.as_pgconn(), legacy_typed_segment.mac_address.unwrap())
+            .await?
+            .pop()
+            .expect("legacy fixed interface should be preallocated");
     let static_assignments = db::network_segment::static_assignments(txn.as_pgconn()).await?;
     assert_eq!(
         legacy_interface.segment_id, static_assignments.id,
@@ -1328,15 +1312,11 @@ async fn test_fixed_preallocation_resolves_managed_prefix_and_segment_type(
         ..Default::default()
     };
     preallocate_expected_machine_interface(txn.as_pgconn(), &legacy_host_bmc, None).await?;
-    let legacy_host_bmc_interface = find_by_mac_address(
-        txn.as_pgconn(),
-        legacy_host_bmc
-            .mac_address
-            .expect("test interface declares a MAC address"),
-    )
-    .await?
-    .pop()
-    .expect("legacy Host BMC fixed interface should be preallocated");
+    let legacy_host_bmc_interface =
+        find_by_mac_address(txn.as_pgconn(), legacy_host_bmc.mac_address.unwrap())
+            .await?
+            .pop()
+            .expect("legacy Host BMC fixed interface should be preallocated");
     assert_eq!(legacy_host_bmc_interface.segment_id, static_assignments.id);
     assert_eq!(legacy_host_bmc_interface.interface_type, InterfaceType::Bmc);
     assert!(!legacy_host_bmc_interface.primary_interface);
@@ -1442,14 +1422,9 @@ async fn test_fixed_preallocation_resolves_managed_prefix_and_segment_type(
             case.name,
         );
         assert!(
-            find_by_mac_address(
-                txn.as_pgconn(),
-                expected_interface
-                    .mac_address
-                    .expect("test interface declares a MAC address"),
-            )
-            .await?
-            .is_empty(),
+            find_by_mac_address(txn.as_pgconn(), expected_interface.mac_address.unwrap())
+                .await?
+                .is_empty(),
             "case: {}",
             case.name,
         );
@@ -1614,9 +1589,7 @@ async fn test_expected_interface_role_controls_observed_interface_creation(
         let interface = find_or_create_observed_machine_interface(
             txn.as_pgconn(),
             None,
-            expected_interface
-                .mac_address
-                .expect("test interface declares a MAC address"),
+            expected_interface.mac_address.unwrap(),
             &[relay],
             Some(expected_interface),
             None,

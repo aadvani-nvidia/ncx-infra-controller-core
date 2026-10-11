@@ -270,15 +270,15 @@ impl TryFrom<rpc::forge::ExpectedInterface> for ExpectedInterface {
     type Error = RpcDataConversionError;
 
     fn try_from(expected_interface: rpc::forge::ExpectedInterface) -> Result<Self, Self::Error> {
-        let mac_address = expected_interface
-            .mac_address
-            .map(|mac| {
+        let mac_address = match expected_interface.mac_address.as_deref() {
+            None | Some("") => None,
+            Some(mac) => Some(
                 mac.parse()
-                    .map_err(|_| RpcDataConversionError::InvalidMacAddress(mac))
-            })
-            .transpose()?;
+                    .map_err(|_| RpcDataConversionError::InvalidMacAddress(mac.to_string()))?,
+            ),
+        };
 
-        Ok(ExpectedInterface {
+        let interface = ExpectedInterface {
             mac_address,
             cerebro_ifname: expected_interface.cerebro_ifname,
             logical_ifname: expected_interface.logical_ifname,
@@ -305,7 +305,11 @@ impl TryFrom<rpc::forge::ExpectedInterface> for ExpectedInterface {
             ip_allocation: expected_interface_ip_allocation_from_rpc(
                 expected_interface.ip_allocation,
             )?,
-        })
+        };
+        interface
+            .validate_identity()
+            .map_err(|message| RpcDataConversionError::InvalidArgument(message.to_string()))?;
+        Ok(interface)
     }
 }
 
@@ -800,6 +804,29 @@ mod tests {
             "retained round trips" {
                 rpc::forge::BmcIpAllocationType::Retained => BmcIpAllocationType::Retained,
             }
+        );
+    }
+
+    #[test]
+    fn expected_interface_names_round_trip_through_rpc_without_a_mac() {
+        let rpc: rpc::forge::ExpectedInterface = serde_json::from_value(serde_json::json!({
+            "cerebro_ifname": "C1-1-L1",
+            "logical_ifname": "rail0"
+        }))
+        .unwrap();
+        let model = ExpectedInterface::try_from(rpc).unwrap();
+        assert_eq!(model.mac_address, None);
+        assert_eq!(model.cerebro_ifname.as_deref(), Some("C1-1-L1"));
+        assert_eq!(model.logical_ifname.as_deref(), Some("rail0"));
+        let output = rpc::forge::ExpectedInterface::from(model.clone());
+        assert!(output.mac_address.is_none());
+        assert_eq!(ExpectedInterface::try_from(output).unwrap(), model);
+        assert!(
+            ExpectedInterface::try_from(rpc::forge::ExpectedInterface {
+                logical_ifname: Some("rail0".to_string()),
+                ..Default::default()
+            })
+            .is_err()
         );
     }
 

@@ -17,8 +17,12 @@
 
 //! Static per-host topology for Astra NICs and lookup helpers over it.
 
-/// Static per-port mapping for an Astra NIC, correlating its logical interface
-/// name, DPU and host PCI addresses, Cerebro interface name, and DPU-original
+/// Astra is currently used in VR machines, and this mapping of physical
+/// interface name to pci addresses is static and does not depend on how
+/// the actual switch connections are made.
+/// 
+/// Static per-port mapping for an Astra NIC, correlating its 
+/// DPU and host PCI addresses, Cerebro interface name, and DPU-original
 /// interface name. Used as a lookup table in multiple places.
 pub struct AstraNicMapping {
     /// DPU-side PCI address.
@@ -234,4 +238,25 @@ pub fn astra_dpu_pci_address_for_cerebro_ifname(cerebro_ifname: &str) -> Option<
         .iter()
         .find(|mapping| mapping.cerebro_ifname == cerebro_ifname)
         .map(|mapping| mapping.dpu_pci_address)
+}
+
+/// Return the cage index for a NIC index in Astra.
+///
+/// Cage index is `((nic_index / 2) * 2) + 1`.
+pub fn astra_get_cage_index(nic_index: u8) -> u8 {
+    ((nic_index / 2) * 2) + 1
+}
+
+/// Return the MPO index for a NIC index in Astra.
+///
+/// MPO index is `(nic_index / 2) + 1`.
+pub fn astra_get_mpo_index(nic_index: u8) -> u8 {
+    (nic_index / 2) + 1
+}
+
+/// Return the Cage/MPO-encoded string (e.g. `C1_2`) for a NIC index in Astra.
+pub fn astra_get_cage_mpo_encoded_string(nic_index: u8) -> String {
+    let cage_index = astra_get_cage_index(nic_index);
+    let mpo_index = astra_get_mpo_index(nic_index);
+    format!("C{cage_index}_{mpo_index}")
 }
