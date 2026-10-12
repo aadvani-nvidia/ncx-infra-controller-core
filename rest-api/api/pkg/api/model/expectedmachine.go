@@ -96,8 +96,9 @@ func (i APIExpectedMachineInterface) Validate() error {
 
 // ToDBModel converts the public interface shape to its persisted form.
 func (i APIExpectedMachineInterface) ToDBModel() cdbm.ExpectedMachineInterface {
+	macAddress := strings.ToUpper(strings.ReplaceAll(i.MacAddress, "-", ":"))
 	return cdbm.ExpectedMachineInterface{
-		MacAddress:         strings.ToUpper(strings.ReplaceAll(i.MacAddress, "-", ":")),
+		MacAddress:         &macAddress,
 		NicType:            i.NicType,
 		FixedIP:            i.FixedIP,
 		FixedMask:          i.FixedMask,
@@ -112,8 +113,12 @@ func (i APIExpectedMachineInterface) ToDBModel() cdbm.ExpectedMachineInterface {
 // NewAPIExpectedMachineInterface converts persisted interface intent to the
 // public REST shape.
 func NewAPIExpectedMachineInterface(i cdbm.ExpectedMachineInterface) APIExpectedMachineInterface {
+	macAddress := ""
+	if i.MacAddress != nil {
+		macAddress = *i.MacAddress
+	}
 	return APIExpectedMachineInterface{
-		MacAddress:         i.MacAddress,
+		MacAddress:         macAddress,
 		NicType:            i.NicType,
 		FixedIP:            i.FixedIP,
 		FixedMask:          i.FixedMask,

@@ -81,7 +81,7 @@ type ExpectedMachine struct {
 // ExpectedMachineInterface is host NIC intent persisted by REST and forwarded
 // to Core's ExpectedMachine.host_nics field.
 type ExpectedMachineInterface struct {
-	MacAddress         string                               `json:"mac_address"`
+	MacAddress         *string                              `json:"mac_address,omitempty"`
 	NicType            *string                              `json:"nic_type,omitempty"`
 	FixedIP            *string                              `json:"fixed_ip,omitempty"`
 	FixedMask          *string                              `json:"fixed_mask,omitempty"`

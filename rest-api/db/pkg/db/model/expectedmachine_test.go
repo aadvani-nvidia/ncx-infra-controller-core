@@ -77,7 +77,7 @@ func TestExpectedMachine_FromProto(t *testing.T) {
 					{Key: "env", Value: cutil.GetPtr("prod")},
 				},
 			},
-			HostNics: []*corev1.ExpectedHostNic{{MacAddress: "02:00:00:00:00:09", NicType: &nicType, FixedIp: &fixedIP}},
+			HostNics: []*corev1.ExpectedHostNic{{MacAddress: cutil.GetPtr("02:00:00:00:00:09"), NicType: &nicType, FixedIp: &fixedIP}},
 		}, &linkedMachineID)
 
 		assert.Equal(t, id, em.ID)
@@ -98,7 +98,7 @@ func TestExpectedMachine_FromProto(t *testing.T) {
 		assert.Equal(t, &trayIdx, em.TrayIdx)
 		assert.Equal(t, &host, em.HostID)
 		assert.Equal(t, Labels{"env": "prod"}, em.Labels)
-		assert.Equal(t, []ExpectedMachineInterface{{MacAddress: "02:00:00:00:00:09", NicType: &nicType, FixedIP: &fixedIP}}, em.Interfaces)
+		assert.Equal(t, []ExpectedMachineInterface{{MacAddress: cutil.GetPtr("02:00:00:00:00:09"), NicType: &nicType, FixedIP: &fixedIP}}, em.Interfaces)
 	})
 
 	t.Run("populates dpfEnabled from is_dpf_enabled", func(t *testing.T) {
@@ -271,8 +271,8 @@ func TestExpectedMachine_ToProto(t *testing.T) {
 			BmcMacAddress:       "aa:bb:cc:dd:ee:ff",
 			ChassisSerialNumber: "CSN-1",
 			Interfaces: []ExpectedMachineInterface{
-				{MacAddress: "02:00:00:00:00:09", NicType: &nicType, FixedIP: &fixedIP},
-				{MacAddress: "02:00:00:00:00:0a"},
+				{MacAddress: cutil.GetPtr("02:00:00:00:00:09"), NicType: &nicType, FixedIP: &fixedIP},
+				{MacAddress: cutil.GetPtr("02:00:00:00:00:0a")},
 			},
 		}
 		got := em.ToProto(ExpectedMachineCredentials{}).GetHostNics()
@@ -365,7 +365,7 @@ func TestExpectedMachineSQLDAO_Create(t *testing.T) {
 					ChassisSerialNumber:      "CHASSIS123",
 					FallbackDpuSerialNumbers: []string{"DPU001", "DPU002"},
 					Interfaces: []ExpectedMachineInterface{{
-						MacAddress: "02:00:00:00:00:09",
+						MacAddress: cutil.GetPtr("02:00:00:00:00:09"),
 						NicType:    cutil.GetPtr("CX9"),
 						FixedIP:    cutil.GetPtr("192.0.2.9"),
 					}},

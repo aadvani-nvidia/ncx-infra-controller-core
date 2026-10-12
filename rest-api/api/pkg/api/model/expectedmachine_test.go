@@ -461,15 +461,15 @@ func TestAPIExpectedMachineInterface_ToDBModel(t *testing.T) {
 		input *corev1.ExpectedHostNic
 	}{
 		{name: "complete declaration", input: &corev1.ExpectedHostNic{
-			MacAddress: "02:00:00:00:00:09", NicType: cutil.GetPtr("CX9"), FixedIp: cutil.GetPtr("192.0.2.9"),
+			MacAddress: cutil.GetPtr("02:00:00:00:00:09"), NicType: cutil.GetPtr("CX9"), FixedIp: cutil.GetPtr("192.0.2.9"),
 			FixedMask: cutil.GetPtr("255.255.255.0"), FixedGateway: cutil.GetPtr("192.0.2.1"), Primary: cutil.GetPtr(true),
 			NetworkSegmentType: corev1.NetworkSegmentType_HOST_INBAND.Enum(),
 			Role:               corev1.ExpectedInterfaceRole_EXPECTED_INTERFACE_ROLE_HOST.Enum(),
 			IpAllocation:       corev1.ExpectedInterfaceIpAllocation_EXPECTED_INTERFACE_IP_ALLOCATION_FIXED.Enum(),
 		}},
-		{name: "legacy declaration without new fields", input: &corev1.ExpectedHostNic{MacAddress: "02:00:00:00:00:09"}},
+		{name: "legacy declaration without new fields", input: &corev1.ExpectedHostNic{MacAddress: cutil.GetPtr("02:00:00:00:00:09")}},
 		{name: "explicit zero values survive", input: &corev1.ExpectedHostNic{
-			MacAddress: "02:00:00:00:00:09", Primary: cutil.GetPtr(false),
+			MacAddress: cutil.GetPtr("02:00:00:00:00:09"), Primary: cutil.GetPtr(false),
 			NetworkSegmentType: corev1.NetworkSegmentType_TENANT.Enum(),
 			Role:               corev1.ExpectedInterfaceRole_EXPECTED_INTERFACE_ROLE_UNSPECIFIED.Enum(),
 			IpAllocation:       corev1.ExpectedInterfaceIpAllocation_EXPECTED_INTERFACE_IP_ALLOCATION_UNSPECIFIED.Enum(),
@@ -558,7 +558,7 @@ func TestNewAPIExpectedMachine(t *testing.T) {
 			dpuSerials:         []string{"DPU002", "DPU001"},
 			wantLabelsJSON:     `{"env":"test","zone":"us-west-1"}`,
 			wantSerialsJSON:    `["DPU002","DPU001"]`,
-			interfaces:         []cdbm.ExpectedMachineInterface{{MacAddress: "02:00:00:00:00:09", NicType: cutil.GetPtr("CX9"), FixedIP: cutil.GetPtr("192.0.2.9")}},
+			interfaces:         []cdbm.ExpectedMachineInterface{{MacAddress: cutil.GetPtr("02:00:00:00:00:09"), NicType: cutil.GetPtr("CX9"), FixedIP: cutil.GetPtr("192.0.2.9")}},
 			wantInterfacesJSON: `[{"macAddress":"02:00:00:00:00:09","nicType":"CX9","fixedIp":"192.0.2.9","fixedMask":null,"fixedGateway":null,"primary":null,"networkSegmentType":null,"role":null,"ipAllocation":null}]`,
 		},
 		{
