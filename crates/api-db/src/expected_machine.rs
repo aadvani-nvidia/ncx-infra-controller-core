@@ -469,7 +469,7 @@ pub async fn find_for_update(
                 fallback_dpu_serial_numbers, metadata_name, metadata_description, metadata_labels,
                 sku_id, host_nics, rack_id, default_pause_ingestion_and_poweron, dpf_enabled,
                 bmc_ip_address, bmc_retain_credentials, dpu_mode, bmc_ip_allocation,
-                host_lifecycle_profile
+                host_lifecycle_profile, server_name
                 FROM expected_machines WHERE id=$1 FOR UPDATE";
             sqlx::query_as(query)
                 .bind(id)
@@ -482,7 +482,7 @@ pub async fn find_for_update(
                 fallback_dpu_serial_numbers, metadata_name, metadata_description, metadata_labels,
                 sku_id, host_nics, rack_id, default_pause_ingestion_and_poweron, dpf_enabled,
                 bmc_ip_address, bmc_retain_credentials, dpu_mode, bmc_ip_allocation,
-                host_lifecycle_profile
+                host_lifecycle_profile, server_name
                 FROM expected_machines WHERE bmc_mac_address=$1 FOR UPDATE";
             sqlx::query_as(query)
                 .bind(mac_address)

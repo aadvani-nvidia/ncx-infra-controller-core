@@ -20,8 +20,7 @@
 /// Astra is currently used in VR machines, and this mapping of physical
 /// interface name to pci addresses is static and does not depend on how
 /// the actual switch connections are made.
-/// 
-/// Static per-port mapping for an Astra NIC, correlating its 
+/// Static per-port mapping for an Astra NIC, correlating its
 /// DPU and host PCI addresses, Cerebro interface name, and DPU-original
 /// interface name. Used as a lookup table in multiple places.
 pub struct AstraNicMapping {
