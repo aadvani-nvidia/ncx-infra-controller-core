@@ -2494,7 +2494,7 @@ func TestCreateExpectedMachinesHandler_Handle(t *testing.T) {
 						assert.Equal(t, "00:00:00:00:00:00", nics[index].GetMacAddress())
 						assert.Equal(t, "CX9", nics[index].GetNicType())
 						assert.Equal(t, ip, nics[index].GetFixedIp())
-						assert.Equal(t, "00:00:00:00:00:00", stored.Interfaces[index].MacAddress)
+						assert.Equal(t, cutil.GetPtr("00:00:00:00:00:00"), stored.Interfaces[index].MacAddress)
 						assert.Equal(t, cutil.GetPtr(ip), stored.Interfaces[index].FixedIP)
 						assert.Equal(t, model.NewAPIExpectedMachineInterface(stored.Interfaces[index]), response[machineIndex].Interfaces[index])
 					}
@@ -2851,7 +2851,7 @@ func TestCreateExpectedMachineHandler_DpfEnabledForwardedToWorkflow(t *testing.T
 	stored, err := cdbm.NewExpectedMachineDAO(dbSession).Get(context.Background(), nil, apiResponse.ID, nil, false)
 	require.NoError(t, err)
 	require.Len(t, stored.Interfaces, 1)
-	assert.Equal(t, "02:AA:BB:CC:DD:EE", stored.Interfaces[0].MacAddress)
+	assert.Equal(t, cutil.GetPtr("02:AA:BB:CC:DD:EE"), stored.Interfaces[0].MacAddress)
 }
 
 // Each REST credential field must reach the encrypted Core PATCH request;
