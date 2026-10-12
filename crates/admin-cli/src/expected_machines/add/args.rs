@@ -258,7 +258,7 @@ impl TryFrom<Args> for rpc::forge::ExpectedMachine {
                     disable_lockdown: Some(dl),
                 }
             }),
-            name: None,
+            server_name: None,
         })
     }
 }

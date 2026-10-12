@@ -170,7 +170,7 @@ pub(crate) struct ExpectedMachineJson {
     pub(crate) host_lifecycle_profile: Option<HostLifecycleProfile>,
     /// Optional operator-assigned name presented to switches in LLDP responses.
     #[serde(default)]
-    pub(crate) name: Option<String>,
+    pub(crate) server_name: Option<String>,
 }
 
 impl ExpectedMachineJson {
