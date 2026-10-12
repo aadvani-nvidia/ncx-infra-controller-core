@@ -450,9 +450,10 @@ func TestAPIExpectedMachineInterface_ToDBModel(t *testing.T) {
 				value := APIExpectedMachineInterface{MacAddress: mac}
 				require.NoError(t, value.Validate())
 				stored := value.ToDBModel()
-				assert.Equal(t, "02:AA:BB:CC:DD:EE", stored.MacAddress)
+				require.NotNil(t, stored.MacAddress)
+				assert.Equal(t, "02:AA:BB:CC:DD:EE", *stored.MacAddress)
 				assert.Equal(t, stored.MacAddress, stored.ToProto().MacAddress)
-				assert.Equal(t, stored.MacAddress, NewAPIExpectedMachineInterface(stored).MacAddress)
+				assert.Equal(t, *stored.MacAddress, NewAPIExpectedMachineInterface(stored).MacAddress)
 			})
 		}
 	})
