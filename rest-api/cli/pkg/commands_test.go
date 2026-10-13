@@ -1662,3 +1662,37 @@ func sortStrings(s []string) {
 		}
 	}
 }
+
+func TestNewApp_MachineSpxMultiplaneCommands(t *testing.T) {
+	tests := []struct {
+		resource, action string
+		flags            []string
+	}{
+		{resource: "spx-multiplane", action: "get"},
+		{resource: "spx-multiplane-maintenance-mode", action: "update", flags: []string{"--maintenance-mode", "--reference"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.resource, func(t *testing.T) {
+			app, err := NewApp(openapi.Spec)
+			require.NoError(t, err)
+			machine := app.Command("machine")
+			require.NotNil(t, machine)
+			resource := machine.Command(tt.resource)
+			require.NotNil(t, resource)
+			command := resource.Command(tt.action)
+			require.NotNil(t, command)
+			require.NotNil(t, command.Action)
+			var output bytes.Buffer
+			app.Writer = &output
+			app.ErrWriter = &output
+			require.NoError(t, app.Run([]string{"nicocli", "machine", tt.resource, tt.action, "--help"}))
+			assert.Contains(t, output.String(), "<machineId>")
+			for _, name := range tt.flags {
+				assert.Contains(t, output.String(), name)
+			}
+			if tt.action == "update" {
+				assert.Contains(t, output.String(), "<rail> <plane>")
+			}
+		})
+	}
+}

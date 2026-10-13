@@ -40,8 +40,8 @@ use crate::machine::topology::MachineTopology;
 use crate::machine::{
     AnyMachine, Dpf, DpuMachine, FailureDetails, HostMachine, HostProfile, HostReprovisionRequest,
     MachineConfig, MachineInterfaceSnapshot, MachineLastRebootRequested, MachineMaintenanceRequest,
-    MachineStatus, ManagedHostState, PredictedHostMachine, ReprovisionRequest, ResetRequest,
-    StableHostMachine, UpgradeDecision,
+    MachineSpxMultiplane, MachineStatus, ManagedHostState, PredictedHostMachine,
+    ReprovisionRequest, ResetRequest, StableHostMachine, UpgradeDecision,
 };
 use crate::machine_boot_interface::{
     BootInterfaceSelection, BootInterfaceSelectionSource, BootInterfaceStatusObservation,
@@ -88,6 +88,9 @@ pub struct MachineSnapshotPgJson {
     pub host_reprovisioning_requested: Option<HostReprovisionRequest>,
     pub reset_requested: Option<ResetRequest>,
     pub machine_maintenance_requested: Option<MachineMaintenanceRequest>,
+    /// Desired Astra plane maintenance; older snapshots omit this field.
+    #[serde(default)]
+    pub spx_multiplane: Option<MachineSpxMultiplane>,
     #[serde(default)]
     pub decommission_requested: bool,
     #[serde(default)]
@@ -396,6 +399,7 @@ impl TryFrom<MachineSnapshotPgJson> for AnyMachine {
             host_profile: value.host_profile,
             rack_fw_details: value.rack_fw_details,
             machine_maintenance_requested: value.machine_maintenance_requested,
+            spx_multiplane: value.spx_multiplane,
             decommission_requested: value.decommission_requested,
             bmc_credential_rotation_requested: value.bmc_credential_rotation_requested,
             uefi_credential_rotation_requested: value.uefi_credential_rotation_requested,
@@ -435,6 +439,66 @@ mod tests {
 
     use super::*;
     use crate::machine_boot_interface::MachineBootInterface;
+
+    #[test]
+    fn spx_multiplane_survives_snapshot_decoding_and_machine_id_conversion() {
+        use crate::machine::spx_multiplane::MachineSpxMultiplaneInterface;
+        use crate::test_support::machine_snapshot::{host_machine_id, machine_snapshot_pg_json};
+
+        let configuration = MachineSpxMultiplane {
+            interfaces: std::collections::BTreeMap::from([
+                (
+                    "eth_r2_p6".to_string(),
+                    MachineSpxMultiplaneInterface {
+                        maintenance_mode: true,
+                        reference: Some("https://example.com/ticket/123".to_string()),
+                        revision: ConfigVersion::new(7),
+                    },
+                ),
+                (
+                    "eth_r0_p1".to_string(),
+                    MachineSpxMultiplaneInterface {
+                        maintenance_mode: false,
+                        reference: None,
+                        revision: ConfigVersion::new(3),
+                    },
+                ),
+            ]),
+        };
+        check_cases(
+            [
+                Case {
+                    scenario: "snapshot predates the column",
+                    input: None,
+                    expect: Yields(None),
+                },
+                Case {
+                    scenario: "non-Astra machine has null configuration",
+                    input: Some(serde_json::Value::Null),
+                    expect: Yields(None),
+                },
+                Case {
+                    scenario: "Astra snapshot retains explicit on and off requests",
+                    input: Some(serde_json::to_value(&configuration).unwrap()),
+                    expect: Yields(Some(configuration)),
+                },
+            ],
+            |field| -> Result<Option<MachineSpxMultiplane>, String> {
+                let mut json =
+                    serde_json::to_value(machine_snapshot_pg_json(host_machine_id())).unwrap();
+                match field {
+                    Some(value) => json["spx_multiplane"] = value,
+                    None => {
+                        json.as_object_mut().unwrap().remove("spx_multiplane");
+                    }
+                }
+                let snapshot: MachineSnapshotPgJson =
+                    serde_json::from_value(json).map_err(|error| error.to_string())?;
+                let machine = HostMachine::try_from(snapshot).map_err(|error| error.to_string())?;
+                Ok(machine.spx_multiplane)
+            },
+        );
+    }
 
     #[derive(Debug)]
     struct Input {

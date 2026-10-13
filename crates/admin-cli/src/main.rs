@@ -112,6 +112,7 @@ mod set;
 mod site_explorer;
 mod site_prefix;
 mod sku;
+mod spx_multiplane;
 mod spx_partition;
 mod ssh;
 mod switch;
@@ -147,6 +148,10 @@ async fn main() -> color_eyre::Result<()> {
     let config = CliOptions::load();
     if config.version {
         println!("{}", carbide_version::version!());
+        return Ok(());
+    }
+    // This command currently validates input without contacting the API.
+    if matches!(&config.commands, Some(CliCommand::SpxMultiplane(_))) {
         return Ok(());
     }
     if config.format == OutputFormat::Csv
@@ -305,6 +310,7 @@ async fn main() -> color_eyre::Result<()> {
         CliCommand::NvlDomain(cmd) => cmd.dispatch(ctx).await?,
         CliCommand::NvlPartition(cmd) => cmd.dispatch(ctx).await?,
         CliCommand::SpxPartition(cmd) => cmd.dispatch(ctx).await?,
+        CliCommand::SpxMultiplane(cmd) => cmd.dispatch(ctx).await?,
         CliCommand::IpxeTemplate(cmd) => cmd.dispatch(ctx).await?,
         CliCommand::OsImage(cmd) => cmd.dispatch(ctx).await?,
         CliCommand::OperatingSystem(cmd) => cmd.dispatch(ctx).await?,

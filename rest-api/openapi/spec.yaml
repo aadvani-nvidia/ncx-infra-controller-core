@@ -11636,6 +11636,187 @@ paths:
           description: Describes an error response for 500 Internal Server Error
           $ref: '#/components/responses/GenericHttpError'
       description: Org must have an Infrastructure Provider entity. Machine must belong to the Provider. User must have authorization role with `PROVIDER_ADMIN` suffix. Machine must meet certain criteria to be eligible for deletion.
+  /v2/org/{org}/nico/machine/{machineId}/spx-multiplane:
+    parameters:
+    - name: org
+      in: path
+      required: true
+      description: Name of the Org
+      schema:
+        type: string
+    - name: machineId
+      in: path
+      required: true
+      description: ID of the Machine
+      schema:
+        type: string
+        example: fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80
+    get:
+      summary: Retrieve Machine Spectrum-X Plane Maintenance State
+      tags:
+      - Machine
+      operationId: get-machine-spx-multiplane
+      x-fern-sdk-group-name:
+      - machine
+      - spx-multiplane
+      description: Retrieve requested and observed maintenance state for each declared Spectrum-X plane on an Astra
+        Machine. New planes start in maintenance mode. Application is complete only when status is Applied and appliedRevision
+        matches revision. Infrastructure Provider Admins and Viewers must belong to the Org and own the Machine Site.
+      responses:
+        '200':
+          description: Requested and observed plane maintenance state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineSpxMultiplane'
+              example:
+                machineId: fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80
+                interfaces:
+                - logicalIfname: eth_r2_p6
+                  rail: 2
+                  plane: 6
+                  maintenanceMode: true
+                  reference: null
+                  revision: V1-T1791799200000000
+                  appliedMaintenanceMode: null
+                  appliedRevision: null
+                  netdev: null
+                  status: Pending
+                  error: null
+                  observedAt: null
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+        '412':
+          description: The Machine is missing on Site, the Site is not Registered, or the Site rejected an operation
+            precondition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NICoAPIError'
+              example:
+                source: nico
+                message: Site is not in Registered state
+                data: null
+  /v2/org/{org}/nico/machine/{machineId}/spx-multiplane/rail/{rail}/plane/{plane}/maintenance-mode:
+    parameters:
+    - name: org
+      in: path
+      required: true
+      description: Name of the Org
+      schema:
+        type: string
+    - name: machineId
+      in: path
+      required: true
+      description: ID of the Machine
+      schema:
+        type: string
+        example: fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80
+    - name: rail
+      in: path
+      required: true
+      description: Rail number, or all four rails. Only the specified plane is selected on each rail.
+      schema:
+        type: string
+        enum:
+        - '0'
+        - '1'
+        - '2'
+        - '3'
+        - all
+        example: '2'
+    - name: plane
+      in: path
+      required: true
+      description: Plane number within each selected rail. Planes 0-3 and 4-7 belong to separate SuperNICs.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 7
+        example: 6
+    patch:
+      summary: Update Machine Spectrum-X Plane Maintenance Mode
+      tags:
+      - Machine
+      operationId: update-machine-spx-multiplane-maintenance-mode
+      x-fern-sdk-group-name:
+      - machine
+      - spx-multiplane
+      description: Set maintenance mode for the specified plane on one or all four rails. True disables the selected
+        plane; false enables it. Other planes are unchanged. Updates for all four rails are saved atomically. The
+        response confirms the requested state was saved; hardware application is asynchronous. Read the Machine Spectrum-X
+        plane state until each selected interface has status Applied and appliedRevision equal to revision. Requires
+        an Infrastructure Provider Admin belonging to the Org and owning the Machine Site. Maintenance updates are
+        allowed while an Instance is attached.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MachineSpxMultiplaneMaintenanceUpdateRequest'
+            examples:
+              EnableMaintenance:
+                value:
+                  maintenanceMode: true
+                  reference: https://tickets.example.com/SPX-42
+              DisableMaintenance:
+                value:
+                  maintenanceMode: false
+              ClearReference:
+                value:
+                  maintenanceMode: true
+                  reference: ''
+      responses:
+        '200':
+          description: Requested maintenance state saved; application may still be pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineSpxMultiplane'
+              example:
+                machineId: fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80
+                interfaces:
+                - logicalIfname: eth_r2_p6
+                  rail: 2
+                  plane: 6
+                  maintenanceMode: true
+                  reference: https://tickets.example.com/SPX-42
+                  revision: V2-T1791799260000000
+                  appliedMaintenanceMode: null
+                  appliedRevision: null
+                  netdev: null
+                  status: Pending
+                  error: null
+                  observedAt: null
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+        '412':
+          description: The Machine is missing on Site, the Site is not Registered, or the Site rejected an operation
+            precondition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NICoAPIError'
+              example:
+                source: nico
+                message: Site is not in Registered state
+                data: null
   '/v2/org/{org}/nico/machine/{machineId}/bmc/reset':
     parameters:
       - schema:
@@ -28672,6 +28853,146 @@ components:
         acknowledgments:
           $ref: '#/components/schemas/MachineOnlineRepairAcknowledgments'
           description: 'Acknowledgments required before online repair can proceed'
+    MachineSpxMultiplaneMaintenanceUpdateRequest:
+      title: MachineSpxMultiplaneMaintenanceUpdateRequest
+      type: object
+      description: Desired maintenance mode for the plane identified by the request path.
+      required:
+      - maintenanceMode
+      properties:
+        maintenanceMode:
+          type: boolean
+          description: True disables the plane for maintenance; false enables it. An explicit value is required.
+        reference:
+          type:
+          - string
+          - 'null'
+          description: Optional reference URL. Omission or null preserves the reference; an empty string clears it.
+      example:
+        maintenanceMode: true
+        reference: https://tickets.example.com/SPX-42
+    MachineSpxMultiplane:
+      title: MachineSpxMultiplane
+      type: object
+      description: Requested and observed Spectrum-X maintenance state for a Machine.
+      required:
+      - machineId
+      - interfaces
+      properties:
+        machineId:
+          type: string
+          description: ID of the Machine.
+        interfaces:
+          type: array
+          maxItems: 32
+          description: Declared logical interfaces and their maintenance states, ordered by rail and then plane.
+          items:
+            $ref: '#/components/schemas/MachineSpxMultiplaneInterface'
+      example:
+        machineId: fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80
+        interfaces:
+        - logicalIfname: eth_r2_p6
+          rail: 2
+          plane: 6
+          maintenanceMode: true
+          reference: null
+          revision: V1-T1791799200000000
+          appliedMaintenanceMode: null
+          appliedRevision: null
+          netdev: null
+          status: Pending
+          error: null
+          observedAt: null
+    MachineSpxMultiplaneInterface:
+      title: MachineSpxMultiplaneInterface
+      type: object
+      description: Requested and observed maintenance state for one declared logical interface.
+      required:
+      - logicalIfname
+      - rail
+      - plane
+      - maintenanceMode
+      - reference
+      - revision
+      - appliedMaintenanceMode
+      - appliedRevision
+      - netdev
+      - status
+      - error
+      - observedAt
+      properties:
+        logicalIfname:
+          type: string
+          pattern: ^eth_r[0-3]_p[0-7]$
+          description: Declared logical interface name.
+        rail:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: Rail number.
+        plane:
+          type: integer
+          minimum: 0
+          maximum: 7
+          description: Plane number within the rail.
+        maintenanceMode:
+          type: boolean
+          description: Requested maintenance mode. All declared planes start with this value true.
+        reference:
+          type:
+          - string
+          - 'null'
+          description: Stored reference URL, or null.
+        revision:
+          type: string
+          minLength: 1
+          description: Version of the requested interface state.
+        appliedMaintenanceMode:
+          type:
+          - boolean
+          - 'null'
+          description: Observed maintenance mode, or null until Xplane confirms a state.
+        appliedRevision:
+          type:
+          - string
+          - 'null'
+          description: Version confirmed by Xplane; it may precede the requested revision.
+        netdev:
+          type:
+          - string
+          - 'null'
+          description: Physical netdev resolved by the DPU agent, or null if unresolved.
+        status:
+          type: string
+          enum:
+          - Pending
+          - Applied
+          - Error
+          description: Applied means Xplane confirmed the current requested state and revision.
+        error:
+          type:
+          - string
+          - 'null'
+          description: Application failure, or null when no failure is reported.
+        observedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Time the application state was observed, or null when no observation exists.
+      example:
+        logicalIfname: eth_r2_p6
+        rail: 2
+        plane: 6
+        maintenanceMode: true
+        reference: null
+        revision: V1-T1791799200000000
+        appliedMaintenanceMode: null
+        appliedRevision: null
+        netdev: null
+        status: Pending
+        error: null
+        observedAt: null
     MachineUpdateRequest:
       title: MachineUpdateRequest
       type: object

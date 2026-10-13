@@ -128,7 +128,10 @@ fn render_node(
     let man_file = man_dir.join(format!("{}.1", path.join("-")));
     let body = strip_sections(&man_to_markdown(&man_file)?, &["SUBCOMMANDS", "EXTRA"]);
     let body = clean_pandoc_markdown(&format_markdown_links(&body));
-    let body = if is_machine_validation_log_command(&path) {
+    // These commands need their complete selector arguments in the synopsis.
+    let body = if is_machine_validation_log_command(&path)
+        || path.get(1).map(String::as_str) == Some("spx-multiplane")
+    {
         let usage = cmd.clone().render_usage().to_string();
         replace_synopsis(&body, usage.strip_prefix("Usage: ").unwrap_or(&usage))
     } else {

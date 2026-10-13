@@ -60,7 +60,7 @@ func TestNewAPIRoutes(t *testing.T) {
 		"expected-rack-group":       8,
 		"expected-switch":           7,
 		"instance-type":             5,
-		"machine":                   21,
+		"machine":                   23,
 		"allocation":                6,
 		"subnet":                    5,
 		"machine-instance-type":     3,
@@ -113,6 +113,9 @@ func TestNewAPIRoutes(t *testing.T) {
 			got := NewAPIRoutes(tt.args.dbSession, tt.args.tc, tt.args.tnc, tt.args.scp, tt.args.cfg, nil)
 
 			assert.Equal(t, totalRouteCount, len(got))
+			multiplanePath := "/org/:orgName/" + cfg.GetAPIName() + "/machine/:id/spx-multiplane"
+			assertRouteExists(t, got, http.MethodGet, multiplanePath)
+			assertRouteExists(t, got, http.MethodPatch, multiplanePath+"/rail/:rail/plane/:plane/maintenance-mode")
 
 			for _, route := range got {
 				assert.Contains(t, route.Path, "/org/:orgName/"+cfg.GetAPIName())

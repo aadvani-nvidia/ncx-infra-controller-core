@@ -2738,6 +2738,157 @@ func (a *MachineAPIService) GetMachineInstanceTypeStatsSummaryExecute(r ApiGetMa
 	return localVarReturnValue, localVarHTTPResponse, nil
 }
 
+type ApiGetMachineSpxMultiplaneRequest struct {
+	ctx        context.Context
+	ApiService *MachineAPIService
+	org        string
+	machineId  string
+}
+
+func (r ApiGetMachineSpxMultiplaneRequest) Execute() (*MachineSpxMultiplane, *http.Response, error) {
+	return r.ApiService.GetMachineSpxMultiplaneExecute(r)
+}
+
+/*
+GetMachineSpxMultiplane Retrieve Machine Spectrum-X Plane Maintenance State
+
+Retrieve requested and observed maintenance state for each declared Spectrum-X plane on an Astra Machine. New planes start in maintenance mode. Application is complete only when status is Applied and appliedRevision matches revision. Infrastructure Provider Admins and Viewers must belong to the Org and own the Machine Site.
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param org Name of the Org
+	@param machineId ID of the Machine
+	@return ApiGetMachineSpxMultiplaneRequest
+*/
+func (a *MachineAPIService) GetMachineSpxMultiplane(ctx context.Context, org string, machineId string) ApiGetMachineSpxMultiplaneRequest {
+	return ApiGetMachineSpxMultiplaneRequest{
+		ApiService: a,
+		ctx:        ctx,
+		org:        org,
+		machineId:  machineId,
+	}
+}
+
+// Execute executes the request
+//
+//	@return MachineSpxMultiplane
+func (a *MachineAPIService) GetMachineSpxMultiplaneExecute(r ApiGetMachineSpxMultiplaneRequest) (*MachineSpxMultiplane, *http.Response, error) {
+	var (
+		localVarHTTPMethod  = http.MethodGet
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *MachineSpxMultiplane
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "MachineAPIService.GetMachineSpxMultiplane")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/v2/org/{org}/nico/machine/{machineId}/spx-multiplane"
+	localVarPath = strings.Replace(localVarPath, "{"+"org"+"}", url.PathEscape(parameterValueToString(r.org, "org")), -1)
+	localVarPath = strings.Replace(localVarPath, "{"+"machineId"+"}", url.PathEscape(parameterValueToString(r.machineId, "machineId")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 400 {
+			var v NICoAPIError
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+			newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 403 {
+			var v NICoAPIError
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+			newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 404 {
+			var v NICoAPIError
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+			newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 500 {
+			var v NICoAPIError
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+			newErr.model = v
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ApiGetMachineStatusHistoryRequest struct {
 	ctx        context.Context
 	ApiService *MachineAPIService
@@ -3852,6 +4003,182 @@ func (a *MachineAPIService) UpdateMachineExecute(r ApiUpdateMachineRequest) (*Ma
 			return localVarReturnValue, localVarHTTPResponse, newErr
 		}
 		if localVarHTTPResponse.StatusCode == 403 {
+			var v NICoAPIError
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+			newErr.model = v
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type ApiUpdateMachineSpxMultiplaneMaintenanceModeRequest struct {
+	ctx                                          context.Context
+	ApiService                                   *MachineAPIService
+	org                                          string
+	machineId                                    string
+	rail                                         string
+	plane                                        int32
+	machineSpxMultiplaneMaintenanceUpdateRequest *MachineSpxMultiplaneMaintenanceUpdateRequest
+}
+
+func (r ApiUpdateMachineSpxMultiplaneMaintenanceModeRequest) MachineSpxMultiplaneMaintenanceUpdateRequest(machineSpxMultiplaneMaintenanceUpdateRequest MachineSpxMultiplaneMaintenanceUpdateRequest) ApiUpdateMachineSpxMultiplaneMaintenanceModeRequest {
+	r.machineSpxMultiplaneMaintenanceUpdateRequest = &machineSpxMultiplaneMaintenanceUpdateRequest
+	return r
+}
+
+func (r ApiUpdateMachineSpxMultiplaneMaintenanceModeRequest) Execute() (*MachineSpxMultiplane, *http.Response, error) {
+	return r.ApiService.UpdateMachineSpxMultiplaneMaintenanceModeExecute(r)
+}
+
+/*
+UpdateMachineSpxMultiplaneMaintenanceMode Update Machine Spectrum-X Plane Maintenance Mode
+
+Set maintenance mode for the specified plane on one or all four rails. True disables the selected plane; false enables it. Other planes are unchanged. Updates for all four rails are saved atomically. The response confirms the requested state was saved; hardware application is asynchronous. Read the Machine Spectrum-X plane state until each selected interface has status Applied and appliedRevision equal to revision. Requires an Infrastructure Provider Admin belonging to the Org and owning the Machine Site.
+
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@param org Name of the Org
+	@param machineId ID of the Machine
+	@param rail Rail number, or all four rails. Only the specified plane is selected on each rail.
+	@param plane Plane number within each selected rail. Planes 0-3 and 4-7 belong to separate SuperNICs.
+	@return ApiUpdateMachineSpxMultiplaneMaintenanceModeRequest
+*/
+func (a *MachineAPIService) UpdateMachineSpxMultiplaneMaintenanceMode(ctx context.Context, org string, machineId string, rail string, plane int32) ApiUpdateMachineSpxMultiplaneMaintenanceModeRequest {
+	return ApiUpdateMachineSpxMultiplaneMaintenanceModeRequest{
+		ApiService: a,
+		ctx:        ctx,
+		org:        org,
+		machineId:  machineId,
+		rail:       rail,
+		plane:      plane,
+	}
+}
+
+// Execute executes the request
+//
+//	@return MachineSpxMultiplane
+func (a *MachineAPIService) UpdateMachineSpxMultiplaneMaintenanceModeExecute(r ApiUpdateMachineSpxMultiplaneMaintenanceModeRequest) (*MachineSpxMultiplane, *http.Response, error) {
+	var (
+		localVarHTTPMethod  = http.MethodPatch
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *MachineSpxMultiplane
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "MachineAPIService.UpdateMachineSpxMultiplaneMaintenanceMode")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/v2/org/{org}/nico/machine/{machineId}/spx-multiplane/rail/{rail}/plane/{plane}/maintenance-mode"
+	localVarPath = strings.Replace(localVarPath, "{"+"org"+"}", url.PathEscape(parameterValueToString(r.org, "org")), -1)
+	localVarPath = strings.Replace(localVarPath, "{"+"machineId"+"}", url.PathEscape(parameterValueToString(r.machineId, "machineId")), -1)
+	localVarPath = strings.Replace(localVarPath, "{"+"rail"+"}", url.PathEscape(parameterValueToString(r.rail, "rail")), -1)
+	localVarPath = strings.Replace(localVarPath, "{"+"plane"+"}", url.PathEscape(parameterValueToString(r.plane, "plane")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+	if r.plane < 0 {
+		return localVarReturnValue, nil, reportError("plane must be greater than 0")
+	}
+	if r.plane > 7 {
+		return localVarReturnValue, nil, reportError("plane must be less than 7")
+	}
+	if r.machineSpxMultiplaneMaintenanceUpdateRequest == nil {
+		return localVarReturnValue, nil, reportError("machineSpxMultiplaneMaintenanceUpdateRequest is required and must be specified")
+	}
+
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{"application/json"}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	// body params
+	localVarPostBody = r.machineSpxMultiplaneMaintenanceUpdateRequest
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := io.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = io.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 400 {
+			var v NICoAPIError
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+			newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 403 {
+			var v NICoAPIError
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+			newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 404 {
+			var v NICoAPIError
+			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				newErr.error = err.Error()
+				return localVarReturnValue, localVarHTTPResponse, newErr
+			}
+			newErr.error = formatErrorMessage(localVarHTTPResponse.Status, &v)
+			newErr.model = v
+			return localVarReturnValue, localVarHTTPResponse, newErr
+		}
+		if localVarHTTPResponse.StatusCode == 500 {
 			var v NICoAPIError
 			err = a.client.decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
 			if err != nil {

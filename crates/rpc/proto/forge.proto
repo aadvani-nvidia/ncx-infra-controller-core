@@ -12003,3 +12003,47 @@ message DeleteNicFirmwareProfileRequest {
   // without deleting the profile. Missing profiles return NOT_FOUND.
   optional string if_version_match = 2;
 }
+
+// Requests and responses shared by the SPX multiplane REST and Core APIs.
+message MachineSpxMultiplaneRequest {
+  common.MachineId machine_id = 1;
+}
+
+// Patch one plane on one rail, or that same plane on all four rails.
+// The selected logical interfaces must be declared on the expected machine.
+// Providers may update maintenance mode even when a machine has an instance.
+message MachineSpxMultiplaneMaintenanceUpdateRequest {
+  common.MachineId machine_id = 1;
+  // Exactly one selector is required. A rail is in 0..3.
+  oneof rail_selector {
+    uint32 rail = 2;
+    google.protobuf.Empty all_rails = 3;
+  }
+  // Required, in 0..7. No other plane is implicitly selected.
+  optional uint32 plane = 4;
+  // Required. True disables the selected planes; false enables them.
+  optional bool maintenance_mode = 5;
+  // Omission preserves the reference; an empty string clears it.
+  optional string reference = 6;
+}
+
+message MachineSpxMultiplane {
+  common.MachineId machine_id = 1;
+  // Ordered by rail, then plane; at most 32 declared interfaces.
+  repeated MachineSpxMultiplaneInterface interfaces = 2;
+}
+
+message MachineSpxMultiplaneInterface {
+  string logical_ifname = 1;
+  uint32 rail = 2;
+  uint32 plane = 3;
+  bool maintenance_mode = 4;
+  optional string reference = 5;
+  string revision = 6;
+  // Omitted until the DPU reports an observation. False is a known enabled state.
+  optional bool applied_maintenance_mode = 7;
+  optional string applied_revision = 8;
+  optional string netdev = 9;
+  optional string error = 10;
+  google.protobuf.Timestamp observed_at = 11;
+}

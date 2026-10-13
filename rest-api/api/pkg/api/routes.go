@@ -789,6 +789,16 @@ func NewAPIRoutes(dbSession *cdb.Session, tc tClient.Client, tnc tClient.Namespa
 			Handler: apiHandler.NewReprovisionMachineDpuHandler(dbSession, scp, cfg),
 		},
 		{
+			Path:    apiPathPrefix + "/machine/:id/spx-multiplane",
+			Method:  http.MethodGet,
+			Handler: apiHandler.NewGetMachineSpxMultiplaneHandler(dbSession, scp),
+		},
+		{
+			Path:    apiPathPrefix + "/machine/:id/spx-multiplane/rail/:rail/plane/:plane/maintenance-mode",
+			Method:  http.MethodPatch,
+			Handler: apiHandler.NewUpdateMachineSpxMultiplaneMaintenanceHandler(dbSession, scp),
+		},
+		{
 			Path:    apiPathPrefix + "/machine/:id/bmc/reset",
 			Method:  http.MethodPatch,
 			Handler: apiHandler.NewResetMachineBMCHandler(dbSession, scp, cfg),
