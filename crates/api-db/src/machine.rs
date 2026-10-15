@@ -51,6 +51,7 @@ use model::machine::network::{
 };
 use model::machine::nvlink::MachineNvLinkStatusObservation;
 use model::machine::spx::MachineSpxStatusObservation;
+use model::machine::spx_multiplane::MachineSpxMultiplane;
 use model::machine::status::MlxDeviceObservation;
 use model::machine::upgrade_policy::AgentUpgradePolicy;
 use model::machine::{
@@ -1326,6 +1327,44 @@ pub async fn update_spx_status_observation(
     })
 }
 
+/// Lock the host row and read its current maintenance requests. Keep the
+/// transaction open until the dependent update is committed.
+pub async fn lock_spx_multiplane(
+    txn: &mut PgConnection,
+    machine_id: &HostMachineId,
+) -> DatabaseResult<Option<MachineSpxMultiplane>> {
+    let query = "SELECT spx_multiplane FROM machines WHERE id=$1 FOR UPDATE";
+    let configuration: Option<Option<sqlx::types::Json<MachineSpxMultiplane>>> =
+        sqlx::query_scalar(query)
+            .bind(machine_id)
+            .fetch_optional(txn)
+            .await
+            .map_err(|error| DatabaseError::query(query, error))?;
+    configuration
+        .map(|value| value.map(|json| json.0))
+        .ok_or_else(|| DatabaseError::NotFoundError {
+            kind: "machine",
+            id: machine_id.to_string(),
+        })
+}
+
+/// Replace maintenance state while holding the lock acquired by
+/// `lock_spx_multiplane` in the same transaction.
+pub async fn update_spx_multiplane(
+    txn: &mut PgConnection,
+    machine_id: &HostMachineId,
+    configuration: &MachineSpxMultiplane,
+) -> DatabaseResult<()> {
+    let query = "UPDATE machines SET spx_multiplane=$1 WHERE id=$2";
+    sqlx::query(query)
+        .bind(sqlx::types::Json(configuration))
+        .bind(machine_id)
+        .execute(txn)
+        .await
+        .map_err(|error| DatabaseError::query(query, error))?;
+    Ok(())
+}
+
 /// `update_mlx_device_observation` saves an unfiltered observation if none
 /// exists or the new timestamp is at least as recent. Comparisons use the
 /// database's timestamp precision. Returns `NotApplied` if the machine is
@@ -1938,6 +1977,15 @@ pub async fn create(
         None => true,                                   // EM entry does not exist
     };
     let host_profile = HostProfile::from_expected_machine(expected_machine_data);
+    let spx_multiplane = if stable_machine_id.machine_type() == MachineType::Host {
+        expected_machine_data
+            .map(|data| MachineSpxMultiplane::from_expected_interfaces(&data.interfaces))
+            .transpose()
+            .map_err(DatabaseError::internal)?
+            .flatten()
+    } else {
+        None
+    };
 
     // Host and DPU machines are created in same `discover_machine` call. Update same
     // state in both machines.
@@ -1988,8 +2036,8 @@ pub async fn create(
     };
 
     let query = r#"INSERT INTO machines(
-                            id, controller_state_version, controller_state, network_config_version, network_config, machine_state_model_version, asn, version, name, description, labels, rack_id, hw_sku, dpf, host_profile)
-                            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::json, $12, $13, $14, $15) RETURNING id"#;
+                            id, controller_state_version, controller_state, network_config_version, network_config, machine_state_model_version, asn, version, name, description, labels, rack_id, hw_sku, dpf, host_profile, spx_multiplane)
+                            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::json, $12, $13, $14, $15, $16) RETURNING id"#;
     let machine_id: MachineId = sqlx::query_as(query)
         .bind(&stable_machine_id_string)
         .bind(state_version)
@@ -2009,6 +2057,7 @@ pub async fn create(
             used_for_ingestion: false,
         }))
         .bind(sqlx::types::Json(&host_profile))
+        .bind(spx_multiplane.as_ref().map(sqlx::types::Json))
         .fetch_one(&mut *txn)
         .await
         .map_err(|e| DatabaseError::query(query, e))?;
@@ -3902,6 +3951,49 @@ mod test {
     use model::resource_pool::define::{Range, ResourcePoolDef, ResourcePoolType};
     use model::resource_pool::{ResourcePool, ValueType};
     use tokio::sync::oneshot;
+
+    #[crate::sqlx_test]
+    async fn spx_multiplane_initializes_on_host_creation_only(
+        pool: sqlx::PgPool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use model::expected_machine::{ExpectedInterface, ExpectedMachineData};
+        let data = ExpectedMachineData {
+            interfaces: vec![ExpectedInterface {
+                logical_ifname: Some("eth_r2_p6".to_string()),
+                cerebro_ifname: Some("C5-1-L3".to_string()),
+                nic_type: Some("CX9".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        for (id, expected) in [
+            (
+                "fm100htes3rn1npvbtm5qd57dkilaag7ljugl1llmm7rfuq1ov50i0rpl30",
+                true,
+            ),
+            (
+                "fm100ds27v4uuq7sgs4gsjummskt0b3tedugtpevjrbfh6su081n9jufcq0",
+                false,
+            ),
+        ] {
+            let mut txn = pool.begin().await?;
+            let machine = super::create(
+                &mut txn,
+                None,
+                &id.parse::<MachineId>()?,
+                ManagedHostState::Ready,
+                Some(&data),
+                2,
+            )
+            .await?;
+            assert_eq!(machine.spx_multiplane.is_some(), expected);
+            if let Some(configuration) = machine.spx_multiplane {
+                assert!(configuration.interfaces["eth_r2_p6"].maintenance_mode);
+            }
+            txn.commit().await?;
+        }
+        Ok(())
+    }
 
     /// A retry may opt in after an earlier request omitted the option, but later
     /// requests cannot cancel a wait once it has been recorded.

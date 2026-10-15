@@ -1196,7 +1196,7 @@ impl MainLoop {
                     // reported on network status below, but a failure here must not block
                     // the HBN/DHCP bookkeeping (or the readiness gate) that follows.
                     let astra_config_status = astra_weave::build_notify_weave_ew_vpc_astra_config(
-                        conf.astra_config.as_ref(),
+                        weave_astra_config(conf.astra_config.as_ref()),
                     )
                     .await;
 
@@ -1285,6 +1285,19 @@ impl MainLoop {
                     {
                         tracing::error!(error = format!("{err:#}"), "Updating interface state.");
                     }
+                }
+
+                // Xplane maintenance has no dependency on HBN being up. Its
+                // per-port failures are reported without changing HBN/DHCP
+                // acknowledgments or the readiness gate.
+                if conf.astra_config.is_some() {
+                    tracing::info!(dpu_machine_id = %self.machine_id, requested_interface_count = conf.astra_config.as_ref().map(|c| c.multiplane_interfaces.len()).unwrap_or_default(), socket_path = %self.options.xplane_maintenance_socket.display(), "DPU received SPX maintenance requests in AstraConfig");
+                    let maintenance_status = crate::astra_xplane::reconcile(
+                        &self.options.xplane_maintenance_socket,
+                        conf.astra_config.as_ref(),
+                    )
+                    .await;
+                    merge_xplane_status(&mut status_out.astra_config_status, maintenance_status);
                 }
 
                 // Feed the latest instance metadata to FMDS and acknowledge it
@@ -1735,12 +1748,32 @@ async fn record_network_status(
     forge_api: &str,
     forge_client_config: &forge_tls_client::ForgeClientConfig,
 ) -> Result<(), eyre::Report> {
+    let maintenance_interfaces = status
+        .astra_config_status
+        .as_ref()
+        .map(|s| s.multiplane_interfaces_status.len())
+        .unwrap_or_default();
+    let dpu_machine_id = status.dpu_machine_id;
+    if maintenance_interfaces > 0 {
+        tracing::info!(?dpu_machine_id, maintenance_interface_count = maintenance_interfaces, %forge_api, "Reporting SPX maintenance observations to Core");
+        for observation in &status
+            .astra_config_status
+            .as_ref()
+            .expect("maintenance observations are present")
+            .multiplane_interfaces_status
+        {
+            tracing::info!(?dpu_machine_id, logical_ifname = %observation.logical_ifname, netdev = ?observation.netdev, revision = %observation.revision, observed_maintenance_mode = ?observation.maintenance_mode, error = ?observation.error, "Including SPX maintenance observation in DPU network status");
+        }
+    }
     let mut client = match forge_tls_client::ForgeTlsClient::new(forge_client_config)
         .build(forge_api)
         .await
     {
         Ok(client) => client,
         Err(err) => {
+            if maintenance_interfaces > 0 {
+                tracing::info!(?dpu_machine_id, error = %err, "Could not connect to Core to report SPX maintenance observations");
+            }
             NetworkStatus::ConnectionFailed {
                 forge_api: forge_api.to_string(),
                 error: format!("{err:#}"),
@@ -1752,10 +1785,20 @@ async fn record_network_status(
     let request = tonic::Request::new(status);
     match client.record_dpu_network_status(request).await {
         Ok(_) => {
+            if maintenance_interfaces > 0 {
+                tracing::info!(
+                    ?dpu_machine_id,
+                    maintenance_interfaces,
+                    "Core acknowledged DPU status report containing SPX maintenance observations"
+                );
+            }
             NetworkStatus::Succeeded.emit();
             Ok(())
         }
         Err(err) => {
+            if maintenance_interfaces > 0 {
+                tracing::info!(?dpu_machine_id, error = %err, "Core rejected DPU status report containing SPX maintenance observations");
+            }
             NetworkStatus::RpcFailed {
                 error: format!("{err:#}"),
             }
@@ -1959,6 +2002,26 @@ fn require_dhcp_before_ipv6_only_network_update(
         eyre::bail!("IPv6-only network update is waiting for DHCP");
     }
     Ok(())
+}
+
+// Plane maintenance has its own owner. Until NIC discovery supplies attachment
+// configuration, do not interpret its delivery as a request to reconcile Weave.
+fn weave_astra_config(config: Option<&rpc::AstraConfig>) -> Option<&rpc::AstraConfig> {
+    config.filter(|config| config.reconcile_attachments.unwrap_or(true))
+}
+
+fn merge_xplane_status(
+    status: &mut Option<rpc::AstraConfigStatus>,
+    maintenance: Vec<rpc::AstraMultiplaneInterfaceStatus>,
+) {
+    if !maintenance.is_empty() {
+        status
+            .get_or_insert_with(|| rpc::AstraConfigStatus {
+                attachments_observed: Some(false),
+                ..Default::default()
+            })
+            .multiplane_interfaces_status = maintenance;
+    }
 }
 
 #[cfg(test)]

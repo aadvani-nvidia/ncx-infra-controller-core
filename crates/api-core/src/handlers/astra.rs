@@ -19,7 +19,7 @@ use std::str::FromStr;
 
 use ::rpc::forge::{
     AstraAttachment, AstraAttachmentOvs, AstraAttachmentVf, AstraConfig, AstraConfigStatus,
-    AstraPhase,
+    AstraMultiplaneInterface, AstraPhase,
 };
 use carbide_uuid::machine::DpuMachineId;
 use carbide_uuid::spx::NULL_SPX_PARTITION_ID;
@@ -46,7 +46,8 @@ use crate::api::Api;
 /// not be associated with any VNI. If the host state is WaitingForDpaToBeReady,
 /// we need to return the configuration specified in the instance.
 /// 1) Is dpa enabled in config? If not, return None.
-/// 2) Does the host associated with the DPU have any Astra NICs? If not, return None.
+/// 2) Declared CX9 logical ports carry maintenance requests even before NIC discovery.
+///    Return None only when both declared ports and discovered Astra NICs are absent.
 /// 3) Is the host associated with the DPU an instance? If so, return asta_config based on spx_config in instance.
 /// 4) Otherwise, return astra_config with VNI set to 0 for each NIC.
 pub(super) async fn get_astra_config(
@@ -68,6 +69,26 @@ pub(super) async fn get_astra_config(
 
     let mut txn = api.txn_begin().await?;
 
+    let multiplane_interfaces =
+        super::spx_multiplane::load_configuration(&mut txn, snapshot.host_snapshot.id)
+            .await?
+            .map(|configuration| {
+                configuration
+                    .interfaces
+                    .into_iter()
+                    .map(|(logical_ifname, state)| {
+                        tracing::info!(machine_id = %snapshot.host_snapshot.id, %logical_ifname, maintenance_mode = state.maintenance_mode, revision = %state.revision, "Including SPX maintenance request in DPU AstraConfig");
+                        AstraMultiplaneInterface {
+                        logical_ifname,
+                        maintenance_mode: Some(state.maintenance_mode),
+                        reference: state.reference,
+                        revision: state.revision.to_string(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
     let dpa_interfaces =
         db::dpa_interface::find_by_machine_id(&mut txn, snapshot.host_snapshot.id, search_config)
             .await?;
@@ -75,11 +96,16 @@ pub(super) async fn get_astra_config(
     txn.commit().await?;
 
     if dpa_interfaces.is_empty() {
-        tracing::debug!(
+        tracing::info!(
             machine_id = %snapshot.host_snapshot.id,
-            "No Astra NICs found; skipping Astra config retrieval",
+            interface_count = multiplane_interfaces.len(),
+            "No Astra NICs found; returning declared plane maintenance when present",
         );
-        return Ok(None);
+        return Ok((!multiplane_interfaces.is_empty()).then_some(AstraConfig {
+            astra_attachments: Vec::new(),
+            multiplane_interfaces,
+            reconcile_attachments: Some(false),
+        }));
     }
 
     let mut astra_attachments = Vec::new();
@@ -200,7 +226,11 @@ pub(super) async fn get_astra_config(
         .await
         .map_err(|e| CarbideError::internal(format!("failed to commit astra config read: {e}")))?;
 
-    Ok(Some(AstraConfig { astra_attachments }))
+    Ok(Some(AstraConfig {
+        astra_attachments,
+        multiplane_interfaces,
+        reconcile_attachments: Some(true),
+    }))
 }
 
 /// Processes Astra config status reported by the DPU agent.
@@ -240,13 +270,25 @@ pub(super) async fn process_astra_config_status(
         db::dpa_interface::find_by_machine_id(&mut txn, snapshot.host_snapshot.id, search_config)
             .await?;
 
-    if dpa_interfaces.is_empty() {
-        // This should not happen. How is the DPU reporting the Astra config status if there are no Astra NICs?
-        tracing::info!("No Astra NICs found in the host, skipping Astra config status processing");
+    super::spx_multiplane::record_observations(
+        &mut txn,
+        snapshot.host_snapshot.id,
+        &astra_config_status.multiplane_interfaces_status,
+    )
+    .await?;
+    txn.commit().await?;
+    tracing::info!(%dpu_machine_id, machine_id = %snapshot.host_snapshot.id, reported_interface_count = astra_config_status.multiplane_interfaces_status.len(), attachments_observed = ?astra_config_status.attachments_observed, "Committed Astra status processing for DPU maintenance observations");
+
+    if astra_config_status.attachments_observed == Some(false) {
         return Ok(());
     }
 
-    txn.commit().await?;
+    if dpa_interfaces.is_empty() {
+        tracing::debug!(
+            "No Astra NICs found; maintenance readback stored without attachment status"
+        );
+        return Ok(());
+    }
 
     let mut txn = api
         .database_connection

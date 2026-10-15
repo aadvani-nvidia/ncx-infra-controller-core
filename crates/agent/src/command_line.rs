@@ -301,6 +301,12 @@ pub struct DhcpOptions {
 
 #[derive(Parser, Debug)]
 pub struct RunOptions {
+    #[clap(
+        long,
+        default_value = "/var/run/dpf/xplane/grpc/maintenance.sock",
+        help = "Unix socket for the Xplane maintenance gRPC service"
+    )]
+    pub xplane_maintenance_socket: std::path::PathBuf,
     #[clap(long, help = "Enable metadata service")]
     pub enable_metadata_service: bool,
     #[clap(

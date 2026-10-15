@@ -368,6 +368,7 @@ pub fn machine_snapshot_pg_json(machine_id: impl MachineIdSubtypeTrait) -> Machi
 
     MachineSnapshotPgJson {
         machine_maintenance_requested: None,
+        spx_multiplane: None,
         decommission_requested: false,
         bmc_credential_rotation_requested: false,
         uefi_credential_rotation_requested: false,

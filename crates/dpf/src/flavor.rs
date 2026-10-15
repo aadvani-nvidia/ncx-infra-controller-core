@@ -1699,6 +1699,8 @@ fn ovs_cerebro_script_raw() -> &'static str {
               _ovs-vsctl --may-exist add-port br-xplane "$netdev_name"
               _ovs-vsctl set Interface "$netdev_name" type=dpdk
               _ovs-vsctl set Interface "$netdev_name" mtu_request=9216
+              # Initialize maintenance without overwriting a later operator request.
+              _ovs-vsctl add Interface "$netdev_name" external_ids spx-arc-maintenance=true
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane=true
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-group-id="r${rail}swpln${sw_plane}"
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-uplink=true

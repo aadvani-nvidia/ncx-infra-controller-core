@@ -820,7 +820,17 @@ impl NonHbnInputChange {
                         ..Default::default()
                     });
             }
-            Self::AstraConfig => config.astra_config = Some(rpc::AstraConfig::default()),
+            Self::AstraConfig => {
+                config.astra_config = Some(rpc::AstraConfig {
+                    multiplane_interfaces: vec![rpc::AstraMultiplaneInterface {
+                        logical_ifname: "eth_r2_p6".to_string(),
+                        maintenance_mode: Some(false),
+                        revision: "V2-T1791792000000000".to_string(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+            }
             Self::AdminNetworkTransition => config.use_admin_network_changed = Some(true),
         }
     }
@@ -940,4 +950,103 @@ async fn test_get_fabric_interfaces_data() {
     // should pass on any Linux host with real hardware or a virtualized PCI
     // network interface.
     // assert!(fabric_interfaces_data.len() > 0);
+}
+
+#[test]
+fn multiplane_delivery_preserves_explicit_mode_without_attachments() {
+    use prost::Message;
+    for mode in [true, false] {
+        let response = ManagedHostNetworkConfigResponse {
+            astra_config: Some(rpc::AstraConfig {
+                astra_attachments: Vec::new(),
+                reconcile_attachments: Some(false),
+                multiplane_interfaces: vec![rpc::AstraMultiplaneInterface {
+                    logical_ifname: "eth_r2_p6".to_string(),
+                    maintenance_mode: Some(mode),
+                    reference: Some("https://tickets.example.com/SPX-42".to_string()),
+                    revision: "V2-T1791792000000000".to_string(),
+                }],
+            }),
+            ..Default::default()
+        };
+        let received =
+            ManagedHostNetworkConfigResponse::decode(response.encode_to_vec().as_slice()).unwrap();
+        let configuration = received.astra_config.unwrap();
+        assert!(configuration.astra_attachments.is_empty());
+        assert_eq!(
+            configuration.multiplane_interfaces[0].maintenance_mode,
+            Some(mode)
+        );
+        assert_eq!(
+            configuration.multiplane_interfaces[0].logical_ifname,
+            "eth_r2_p6"
+        );
+        assert_eq!(
+            configuration.multiplane_interfaces[0].revision,
+            "V2-T1791792000000000"
+        );
+        assert_eq!(
+            configuration.multiplane_interfaces[0].reference.as_deref(),
+            Some("https://tickets.example.com/SPX-42")
+        );
+    }
+}
+
+#[tokio::test]
+async fn maintenance_only_delivery_skips_weave_reconciliation() {
+    let legacy = rpc::AstraConfig::default();
+    assert!(weave_astra_config(Some(&legacy)).is_some());
+    let maintenance_only = rpc::AstraConfig {
+        reconcile_attachments: Some(false),
+        multiplane_interfaces: vec![rpc::AstraMultiplaneInterface {
+            logical_ifname: "eth_r2_p6".to_string(),
+            maintenance_mode: Some(false),
+            revision: "V2-T1791792000000000".to_string(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let weave_config = weave_astra_config(Some(&maintenance_only));
+    assert!(weave_config.is_none());
+    // With no attachment configuration this completes without opening a socket.
+    let status = astra_weave::build_notify_weave_ew_vpc_astra_config(weave_config)
+        .await
+        .unwrap();
+    assert!(status.astra_attachments_status.is_empty());
+    assert_eq!(status.attachments_observed, Some(false));
+}
+
+#[test]
+fn xplane_status_merge_preserves_attachment_observations() {
+    let maintenance = || {
+        vec![rpc::AstraMultiplaneInterfaceStatus {
+            logical_ifname: "eth_r0_p0".to_string(),
+            maintenance_mode: Some(false),
+            ..Default::default()
+        }]
+    };
+    let mut absent = None;
+    merge_xplane_status(&mut absent, Vec::new());
+    assert!(absent.is_none());
+    merge_xplane_status(&mut absent, maintenance());
+    let only_maintenance = absent.unwrap();
+    assert_eq!(only_maintenance.attachments_observed, Some(false));
+    assert_eq!(only_maintenance.multiplane_interfaces_status.len(), 1);
+
+    let mut combined = Some(rpc::AstraConfigStatus {
+        attachments_observed: Some(true),
+        astra_attachments_status: vec![rpc::AstraAttachmentStatus {
+            mac_address: "00:11:22:33:44:55".to_string(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    merge_xplane_status(&mut combined, maintenance());
+    let combined = combined.unwrap();
+    assert_eq!(combined.attachments_observed, Some(true));
+    assert_eq!(
+        combined.astra_attachments_status[0].mac_address,
+        "00:11:22:33:44:55"
+    );
+    assert_eq!(combined.multiplane_interfaces_status.len(), 1);
 }
