@@ -85,8 +85,12 @@ pub(crate) async fn reconcile(
     socket_path: &Path,
     config: Option<&AstraConfig>,
 ) -> Vec<AstraMultiplaneInterfaceStatus> {
-    let Some(config) = config.filter(|c| !c.multiplane_interfaces.is_empty()) else {
-        tracing::info!("Skipping Xplane maintenance reconciliation: no requested interfaces");
+    let Some(config) = config.filter(|c| {
+        c.is_maintenance_config_present.unwrap_or(true) && !c.multiplane_interfaces.is_empty()
+    }) else {
+        tracing::info!(
+            "Skipping Xplane maintenance reconciliation: no maintenance configuration or requested interfaces"
+        );
         return Vec::new();
     };
     reconcile_with_links(socket_path, config, interface_links().await).await
@@ -205,6 +209,43 @@ mod tests {
 
     use super::*;
     use crate::xplane_mock_server::{self, MockXplaneMaintenance};
+
+    #[tokio::test]
+    async fn absent_maintenance_config_skips_reconciliation() {
+        for (scenario, config) in [
+            ("no config", None),
+            (
+                "no interfaces",
+                Some(AstraConfig {
+                    is_maintenance_config_present: Some(true),
+                    ..Default::default()
+                }),
+            ),
+            (
+                "config explicitly absent",
+                Some(AstraConfig {
+                    is_maintenance_config_present: Some(false),
+                    multiplane_interfaces: vec![AstraMultiplaneInterface {
+                        logical_ifname: "eth_r0_p0".to_string(),
+                        maintenance_mode: Some(true),
+                        revision: "V1-T1791792000000000".to_string(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+            ),
+        ] {
+            assert!(
+                reconcile(
+                    Path::new("/unused-xplane-maintenance.sock"),
+                    config.as_ref()
+                )
+                .await
+                .is_empty(),
+                "{scenario}"
+            );
+        }
+    }
 
     fn link(name: &str, altnames: &[&str]) -> LinkMessage {
         let mut link = LinkMessage::default();

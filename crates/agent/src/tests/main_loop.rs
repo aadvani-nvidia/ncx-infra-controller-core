@@ -959,7 +959,8 @@ fn multiplane_delivery_preserves_explicit_mode_without_attachments() {
         let response = ManagedHostNetworkConfigResponse {
             astra_config: Some(rpc::AstraConfig {
                 astra_attachments: Vec::new(),
-                reconcile_attachments: Some(false),
+                is_attachment_config_present: Some(false),
+                is_maintenance_config_present: Some(true),
                 multiplane_interfaces: vec![rpc::AstraMultiplaneInterface {
                     logical_ifname: "eth_r2_p6".to_string(),
                     maintenance_mode: Some(mode),
@@ -973,6 +974,8 @@ fn multiplane_delivery_preserves_explicit_mode_without_attachments() {
             ManagedHostNetworkConfigResponse::decode(response.encode_to_vec().as_slice()).unwrap();
         let configuration = received.astra_config.unwrap();
         assert!(configuration.astra_attachments.is_empty());
+        assert_eq!(configuration.is_attachment_config_present, Some(false));
+        assert_eq!(configuration.is_maintenance_config_present, Some(true));
         assert_eq!(
             configuration.multiplane_interfaces[0].maintenance_mode,
             Some(mode)
@@ -994,10 +997,16 @@ fn multiplane_delivery_preserves_explicit_mode_without_attachments() {
 
 #[tokio::test]
 async fn maintenance_only_delivery_skips_weave_reconciliation() {
-    let legacy = rpc::AstraConfig::default();
-    assert!(weave_astra_config(Some(&legacy)).is_some());
+    for presence in [None, Some(true)] {
+        let attachments = rpc::AstraConfig {
+            is_attachment_config_present: presence,
+            ..Default::default()
+        };
+        assert!(weave_astra_config(Some(&attachments)).is_some());
+    }
     let maintenance_only = rpc::AstraConfig {
-        reconcile_attachments: Some(false),
+        is_attachment_config_present: Some(false),
+        is_maintenance_config_present: Some(true),
         multiplane_interfaces: vec![rpc::AstraMultiplaneInterface {
             logical_ifname: "eth_r2_p6".to_string(),
             maintenance_mode: Some(false),
@@ -1013,7 +1022,8 @@ async fn maintenance_only_delivery_skips_weave_reconciliation() {
         .await
         .unwrap();
     assert!(status.astra_attachments_status.is_empty());
-    assert_eq!(status.attachments_observed, Some(false));
+    assert_eq!(status.is_attachment_status_present, Some(false));
+    assert_eq!(status.is_maintenance_status_present, Some(false));
 }
 
 #[test]
@@ -1030,11 +1040,13 @@ fn xplane_status_merge_preserves_attachment_observations() {
     assert!(absent.is_none());
     merge_xplane_status(&mut absent, maintenance());
     let only_maintenance = absent.unwrap();
-    assert_eq!(only_maintenance.attachments_observed, Some(false));
+    assert_eq!(only_maintenance.is_attachment_status_present, Some(false));
+    assert_eq!(only_maintenance.is_maintenance_status_present, Some(true));
     assert_eq!(only_maintenance.multiplane_interfaces_status.len(), 1);
 
     let mut combined = Some(rpc::AstraConfigStatus {
-        attachments_observed: Some(true),
+        is_attachment_status_present: Some(true),
+        is_maintenance_status_present: Some(false),
         astra_attachments_status: vec![rpc::AstraAttachmentStatus {
             mac_address: "00:11:22:33:44:55".to_string(),
             ..Default::default()
@@ -1043,7 +1055,8 @@ fn xplane_status_merge_preserves_attachment_observations() {
     });
     merge_xplane_status(&mut combined, maintenance());
     let combined = combined.unwrap();
-    assert_eq!(combined.attachments_observed, Some(true));
+    assert_eq!(combined.is_attachment_status_present, Some(true));
+    assert_eq!(combined.is_maintenance_status_present, Some(true));
     assert_eq!(
         combined.astra_attachments_status[0].mac_address,
         "00:11:22:33:44:55"

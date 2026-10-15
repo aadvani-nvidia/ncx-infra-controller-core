@@ -2007,7 +2007,7 @@ fn require_dhcp_before_ipv6_only_network_update(
 // Plane maintenance has its own owner. Until NIC discovery supplies attachment
 // configuration, do not interpret its delivery as a request to reconcile Weave.
 fn weave_astra_config(config: Option<&rpc::AstraConfig>) -> Option<&rpc::AstraConfig> {
-    config.filter(|config| config.reconcile_attachments.unwrap_or(true))
+    config.filter(|config| config.is_attachment_config_present.unwrap_or(true))
 }
 
 fn merge_xplane_status(
@@ -2015,12 +2015,12 @@ fn merge_xplane_status(
     maintenance: Vec<rpc::AstraMultiplaneInterfaceStatus>,
 ) {
     if !maintenance.is_empty() {
-        status
-            .get_or_insert_with(|| rpc::AstraConfigStatus {
-                attachments_observed: Some(false),
-                ..Default::default()
-            })
-            .multiplane_interfaces_status = maintenance;
+        let status = status.get_or_insert_with(|| rpc::AstraConfigStatus {
+            is_attachment_status_present: Some(false),
+            ..Default::default()
+        });
+        status.is_maintenance_status_present = Some(true);
+        status.multiplane_interfaces_status = maintenance;
     }
 }
 

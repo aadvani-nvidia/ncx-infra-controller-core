@@ -389,7 +389,7 @@ pub(crate) enum CliCommand {
         visible_alias = "spx"
     )]
     SpxPartition(spx_partition::Cmd),
-    #[clap(about = "Control Spectrum-X plane maintenance on a machine")]
+    #[clap(about = "Configure Spectrum-X plane maintenance on a machine")]
     SpxMaintenance(spx_maintenance::Args),
     #[clap(about = "SSH Util functions", subcommand)]
     Ssh(ssh::Cmd),

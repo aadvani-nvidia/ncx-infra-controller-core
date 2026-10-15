@@ -9435,9 +9435,12 @@ message AstraConfig {
   repeated AstraAttachment astra_attachments = 1;
   // Independent of attachments; all declared planes are initially in maintenance.
   repeated AstraMultiplaneInterface multiplane_interfaces = 2;
-  // False means attachments are not available yet: receive maintenance state
-  // without starting Weave reconciliation. Omission retains legacy behavior (true).
-  optional bool reconcile_attachments = 3;
+  // False means attachment configuration is absent; skip Weave reconciliation.
+  // Omission retains legacy behavior (true), including an empty attachment list.
+  optional bool is_attachment_config_present = 3;
+  // False means maintenance configuration is absent; skip Xplane reconciliation.
+  // Omission retains legacy behavior (true). An empty interface list is a no-op.
+  optional bool is_maintenance_config_present = 4;
 }
 
 message AstraMultiplaneInterface {
@@ -9484,9 +9487,12 @@ message AstraConfigStatus {
   option (carbide.codegen.v1.message_derive) = "serde::Serialize";
   repeated AstraAttachmentStatus astra_attachments_status = 1;
   repeated AstraMultiplaneInterfaceStatus multiplane_interfaces_status = 2;
-  // False means this report contains only maintenance observations. Do not
-  // replace attachment observations. Omission retains legacy behavior (true).
-  optional bool attachments_observed = 3;
+  // False means attachment status is absent; preserve stored observations.
+  // Omission retains legacy behavior (true), including an observed empty list.
+  optional bool is_attachment_status_present = 3;
+  // False means maintenance status is absent; preserve stored observations.
+  // Omission retains legacy behavior (true). Updates apply per reported interface.
+  optional bool is_maintenance_status_present = 4;
 }
 
 // Readback from Xplane for the desired revision attempted on one logical port.

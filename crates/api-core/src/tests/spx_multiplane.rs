@@ -112,7 +112,7 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
                 machine_id: Some(id),
             }))
     };
-    let report = |mode, revision: String, offset| {
+    let report = |mode, revision: String, offset, is_maintenance_status_present| {
         env.api
             .record_dpu_network_status(Request::new(forge::DpuNetworkStatus {
                 dpu_machine_id: Some(host.dpu().id),
@@ -121,7 +121,8 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
                     ..Default::default()
                 }),
                 astra_config_status: Some(forge::AstraConfigStatus {
-                    attachments_observed: Some(false),
+                    is_attachment_status_present: Some(false),
+                    is_maintenance_status_present,
                     multiplane_interfaces_status: vec![forge::AstraMultiplaneInterfaceStatus {
                         logical_ifname: "eth_r0_p0".to_string(),
                         revision,
@@ -135,7 +136,9 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
                 ..Default::default()
             }))
     };
-    report(false, revision.clone(), 0).await.unwrap();
+    report(false, revision.clone(), 0, Some(true))
+        .await
+        .unwrap();
     let applied = read().await.unwrap().into_inner();
     let port = &applied.interfaces[0];
     assert_eq!(port.applied_maintenance_mode, Some(false));
@@ -154,12 +157,25 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
 
     // A mismatching readback cannot be acknowledged as applied, even if the
     // agent accidentally omitted its error. A later good report recovers.
-    report(true, revision.clone(), 1).await.unwrap();
-    let failed = read().await.unwrap().into_inner();
-    assert!(failed.interfaces[0].error.is_some());
-    assert!(failed.interfaces[0].applied_revision.is_none());
-    report(false, revision.clone(), 2).await.unwrap();
-    report(true, revision.clone(), 1).await.unwrap();
+    // An explicit absent status is ignored, even if entries were supplied.
+    // Omission preserves compatibility with agents predating the presence flag.
+    for (presence, expected_mode) in [(Some(false), false), (None, true)] {
+        report(true, revision.clone(), 1, presence).await.unwrap();
+        let result = read().await.unwrap().into_inner();
+        assert_eq!(
+            result.interfaces[0].applied_maintenance_mode,
+            Some(expected_mode)
+        );
+        assert_eq!(result.interfaces[0].error.is_some(), expected_mode);
+        assert_eq!(
+            result.interfaces[0].applied_revision.is_none(),
+            expected_mode
+        );
+    }
+    report(false, revision.clone(), 2, Some(true))
+        .await
+        .unwrap();
+    report(true, revision.clone(), 1, Some(true)).await.unwrap();
     let recovered = read().await.unwrap().into_inner();
     assert!(recovered.interfaces[0].error.is_none());
     assert_eq!(
@@ -185,7 +201,7 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
         Some(revision.as_str()),
         "new request remains pending with previous readback"
     );
-    report(true, revision, 3).await.unwrap();
+    report(true, revision, 3, Some(true)).await.unwrap();
     let pending = read().await.unwrap().into_inner();
     assert_eq!(
         pending.interfaces[0].applied_maintenance_mode,
@@ -198,7 +214,7 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
     );
     // A newer desired revision takes precedence even if the agent clock moved
     // backwards; timestamp ordering only rejects replays of the same revision.
-    report(true, pending.interfaces[0].revision.clone(), 0)
+    report(true, pending.interfaces[0].revision.clone(), 0, Some(true))
         .await
         .unwrap();
     let current = read().await.unwrap().into_inner();
@@ -239,7 +255,7 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
         db::ConditionalWrite::Applied(())
     ));
     txn.commit().await.unwrap();
-    report(true, current.interfaces[0].revision.clone(), 4)
+    report(true, current.interfaces[0].revision.clone(), 4, Some(true))
         .await
         .unwrap();
     let stored_attachments: serde_json::Value =
@@ -253,27 +269,41 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
         serde_json::to_value(&attachments).unwrap()
     );
 
-    // Older agents omit the flag, retaining the existing full attachment-report
-    // semantics: an observed empty list clears the previous attachments.
-    env.api
-        .record_dpu_network_status(Request::new(forge::DpuNetworkStatus {
-            dpu_machine_id: Some(host.dpu().id),
-            dpu_health: Some(rpc::health::HealthReport {
-                source: "forge-dpu-agent".to_string(),
+    // Both an explicit present flag and omission by older agents retain full
+    // attachment-report semantics: an observed empty list clears attachments.
+    for presence in [Some(true), None] {
+        let mut txn = env.db_txn().await;
+        assert!(matches!(
+            db::machine::update_spx_status_observation(&mut txn, &host.id, &attachments)
+                .await
+                .unwrap(),
+            db::ConditionalWrite::Applied(())
+        ));
+        txn.commit().await.unwrap();
+        env.api
+            .record_dpu_network_status(Request::new(forge::DpuNetworkStatus {
+                dpu_machine_id: Some(host.dpu().id),
+                dpu_health: Some(rpc::health::HealthReport {
+                    source: "forge-dpu-agent".to_string(),
+                    ..Default::default()
+                }),
+                astra_config_status: Some(forge::AstraConfigStatus {
+                    is_attachment_status_present: presence,
+                    is_maintenance_status_present: Some(false),
+                    ..Default::default()
+                }),
                 ..Default::default()
-            }),
-            astra_config_status: Some(Default::default()),
-            ..Default::default()
-        }))
-        .await
-        .unwrap();
-    let legacy_attachments: serde_json::Value =
-        sqlx::query_scalar("SELECT spx_status_observation FROM machines WHERE id=$1")
-            .bind(id)
-            .fetch_one(&env.pool)
+            }))
             .await
             .unwrap();
-    assert_eq!(legacy_attachments["spx_attachments"], serde_json::json!([]));
+        let stored_attachments: serde_json::Value =
+            sqlx::query_scalar("SELECT spx_status_observation FROM machines WHERE id=$1")
+                .bind(id)
+                .fetch_one(&env.pool)
+                .await
+                .unwrap();
+        assert_eq!(stored_attachments["spx_attachments"], serde_json::json!([]));
+    }
 }
 
 #[crate::sqlx_test]
@@ -294,7 +324,8 @@ async fn spx_multiplane_requests_persist_and_reach_dpu_without_attachments(pool:
         .astra_config
         .expect("maintenance must be delivered before NIC discovery");
     assert!(initial.astra_attachments.is_empty());
-    assert_eq!(initial.reconcile_attachments, Some(false));
+    assert_eq!(initial.is_attachment_config_present, Some(false));
+    assert_eq!(initial.is_maintenance_config_present, Some(true));
     assert_eq!(initial.multiplane_interfaces.len(), 32);
     assert!(
         initial

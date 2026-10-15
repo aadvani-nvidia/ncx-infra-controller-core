@@ -22,9 +22,9 @@ use clap::{Parser, ValueEnum};
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Control maintenance mode for Spectrum-X planes on a machine",
+    about = "Configure maintenance mode for Spectrum-X planes on a machine",
     override_usage = "nico-admin-cli spx-maintenance --machine-id <MACHINE_ID> multiplane rail <0-3|all> plane <0-7> <on|off> [--reference <URL>]\n       nico-admin-cli spx-maintenance --machine-id <MACHINE_ID> show",
-    long_about = "Control maintenance mode for Spectrum-X planes on a machine. Each rail has \
+    long_about = "Configure maintenance mode for Spectrum-X planes on a machine. Each rail has \
         two SuperNICs: planes 0-3 belong to one, and planes 4-7 belong to the other. \
         Rail R and plane P select the specified rail and plane that are affected;
         its matching plane on the other SuperNIC is unchanged. All planes start \
@@ -32,15 +32,15 @@ use clap::{Parser, ValueEnum};
     after_long_help = "\
 EXAMPLES:
 
-Disable plane 6 on rail 2 (eth_r2_p6):
+Enable maintenance mode on plane 6 on rail 2 (eth_r2_p6):
     $ nico-admin-cli spx-maintenance --machine-id fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80 \
     multiplane rail 2 plane 6 on --reference https://tickets.example.com/SPX-42
 
-Enable plane 6 on rail 2:
+Disable maintenance mode on plane 6 on rail 2:
     $ nico-admin-cli spx-maintenance --machine-id fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80 \
     multiplane rail 2 plane 6 off
 
-Disable plane 6 on all four rails:
+Enable maintenance mode plane 6 on all four rails:
     $ nico-admin-cli spx-maintenance --machine-id fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80 \
     multiplane rail all plane 6 on
 
@@ -59,20 +59,20 @@ pub(crate) struct Args {
 #[derive(Parser, Debug)]
 pub(super) enum Action {
     #[command(
-        about = "Turn maintenance mode on (disable) or off (enable) for the selected plane",
+        about = "Turn maintenance mode on or off for the selected plane",
         override_usage = "nico-admin-cli spx-maintenance --machine-id <MACHINE_ID> multiplane rail <0-3|all> plane <0-7> <on|off> [--reference <URL>]",
         after_long_help = "\
 EXAMPLES:
 
-Disable plane 6 on rail 2 with a ticket reference:
+Enable maintenance mode on plane 6 on rail 2 with a ticket reference:
     $ nico-admin-cli spx-maintenance --machine-id fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80 \
     multiplane rail 2 plane 6 on --reference https://tickets.example.com/SPX-42
 
-Enable plane 6 on rail 2:
+Disable maintenance mode on plane 6 on rail 2:
     $ nico-admin-cli spx-maintenance --machine-id fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80 \
     multiplane rail 2 plane 6 off
 
-Disable plane 6 on all four rails without changing plane 2:
+Enable maintenance mode on plane 6 on all four rails without changing plane 2:
     $ nico-admin-cli spx-maintenance --machine-id fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80 \
     multiplane rail all plane 6 on
 
@@ -90,7 +90,7 @@ Disable plane 6 on all four rails without changing plane 2:
         #[arg(
             value_enum,
             value_name = "on|off",
-            help = "on disables the plane; off enables it"
+            help = "maintenance mode on disables the plane; maintenance mode off enables it"
         )]
         mode: MaintenanceMode,
         #[arg(

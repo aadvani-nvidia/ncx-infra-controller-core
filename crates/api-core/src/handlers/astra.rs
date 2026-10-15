@@ -103,8 +103,9 @@ pub(super) async fn get_astra_config(
         );
         return Ok((!multiplane_interfaces.is_empty()).then_some(AstraConfig {
             astra_attachments: Vec::new(),
+            is_maintenance_config_present: Some(true),
             multiplane_interfaces,
-            reconcile_attachments: Some(false),
+            is_attachment_config_present: Some(false),
         }));
     }
 
@@ -228,8 +229,9 @@ pub(super) async fn get_astra_config(
 
     Ok(Some(AstraConfig {
         astra_attachments,
+        is_maintenance_config_present: Some(!multiplane_interfaces.is_empty()),
         multiplane_interfaces,
-        reconcile_attachments: Some(true),
+        is_attachment_config_present: Some(true),
     }))
 }
 
@@ -270,16 +272,21 @@ pub(super) async fn process_astra_config_status(
         db::dpa_interface::find_by_machine_id(&mut txn, snapshot.host_snapshot.id, search_config)
             .await?;
 
-    super::spx_multiplane::record_observations(
-        &mut txn,
-        snapshot.host_snapshot.id,
-        &astra_config_status.multiplane_interfaces_status,
-    )
-    .await?;
+    if astra_config_status
+        .is_maintenance_status_present
+        .unwrap_or(true)
+    {
+        super::spx_multiplane::record_observations(
+            &mut txn,
+            snapshot.host_snapshot.id,
+            &astra_config_status.multiplane_interfaces_status,
+        )
+        .await?;
+    }
     txn.commit().await?;
-    tracing::info!(%dpu_machine_id, machine_id = %snapshot.host_snapshot.id, reported_interface_count = astra_config_status.multiplane_interfaces_status.len(), attachments_observed = ?astra_config_status.attachments_observed, "Committed Astra status processing for DPU maintenance observations");
+    tracing::info!(%dpu_machine_id, machine_id = %snapshot.host_snapshot.id, reported_interface_count = astra_config_status.multiplane_interfaces_status.len(), is_attachment_status_present = ?astra_config_status.is_attachment_status_present, is_maintenance_status_present = ?astra_config_status.is_maintenance_status_present, "Committed Astra status processing for DPU maintenance observations");
 
-    if astra_config_status.attachments_observed == Some(false) {
+    if astra_config_status.is_attachment_status_present == Some(false) {
         return Ok(());
     }
 
