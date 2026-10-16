@@ -2198,11 +2198,10 @@ impl SiteExplorer {
                 self.config.retained_boot_interface_window,
             )
             .await;
-            for nic in expected_machine
-                .data
-                .interfaces
-                .iter()
-                .filter(|interface| interface.mac_address != expected_machine.bmc_mac_address)
+            for nic in
+                expected_machine.data.interfaces.iter().filter(|interface| {
+                    interface.mac_address != Some(expected_machine.bmc_mac_address)
+                })
             {
                 try_apply_expected_interface(
                     &self.database_connection,
@@ -2323,7 +2322,7 @@ impl SiteExplorer {
                 // the separate DpuBmc interface.
                 interface.role == model::expected_machine::ExpectedInterfaceRole::DpuOs
             })
-            .map(|interface| interface.mac_address)
+            .filter_map(|interface| interface.mac_address)
             .chain(
                 expected_switches
                     .iter()
@@ -3868,6 +3867,10 @@ pub async fn try_apply_expected_interface(
     expected_interface: &ExpectedInterface,
     retained_window: Option<chrono::Duration>,
 ) {
+    // Cerebro-only declarations are stored until name-to-MAC resolution is implemented.
+    let Some(mac_address) = expected_interface.mac_address else {
+        return;
+    };
     if expected_interface.resolved_ip_allocation() != ExpectedInterfaceIpAllocation::Fixed {
         return;
     }
@@ -3876,7 +3879,7 @@ pub async fn try_apply_expected_interface(
         Err(error) => {
             tracing::warn!(
                 %error,
-                mac_address = %expected_interface.mac_address,
+                mac_address = %mac_address,
                 "Site-explorer expected-interface allocation: txn_begin failed"
             );
             return;
@@ -3905,7 +3908,7 @@ pub async fn try_apply_expected_interface(
             tracing::warn!(
                 %error,
                 expected_machine_id = ?expected_machine.id,
-                mac_address = %expected_interface.mac_address,
+                mac_address = %mac_address,
                 "Site-explorer expected-interface allocation: configuration lookup failed"
             );
             txn.rollback_or_log("expected interface allocation lookup failed")
@@ -3914,7 +3917,7 @@ pub async fn try_apply_expected_interface(
         }
     };
 
-    let declaration_matches = if expected_interface.mac_address == current.bmc_mac_address {
+    let declaration_matches = if mac_address == current.bmc_mac_address {
         current.effective_host_bmc() == *expected_interface
     } else {
         current.data.interfaces.contains(expected_interface)
@@ -3924,7 +3927,7 @@ pub async fn try_apply_expected_interface(
     if current.bmc_mac_address != expected_machine.bmc_mac_address || !declaration_matches {
         tracing::debug!(
             expected_machine_id = ?expected_machine.id,
-            mac_address = %expected_interface.mac_address,
+            mac_address = %mac_address,
             "Site-explorer expected-interface allocation: owner or declaration changed, skipping"
         );
         txn.rollback_or_log("expected owner or interface declaration changed before allocation")
@@ -3944,7 +3947,7 @@ pub async fn try_apply_expected_interface(
             if let Err(error) = txn.commit().await {
                 tracing::warn!(
                     %error,
-                    mac_address = %expected_interface.mac_address,
+                    mac_address = %mac_address,
                     "Site-explorer expected-interface allocation: commit failed"
                 );
             }
@@ -3952,7 +3955,7 @@ pub async fn try_apply_expected_interface(
         Err(error) => {
             tracing::warn!(
                 %error,
-                mac_address = %expected_interface.mac_address,
+                mac_address = %mac_address,
                 "Site-explorer expected-interface allocation skipped"
             );
         }

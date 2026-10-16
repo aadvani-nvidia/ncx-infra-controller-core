@@ -131,6 +131,10 @@ Endpoints that have deprecations will be grouped here. Following deprecations ar
 
 - `infrastructureProviderId` query parameter on the list Instances endpoint was deprecated and will be removed on **October 10th, 2026 0:00 UTC**. Instances will no longer be filtered by Infrastructure Provider; results are scoped to the org's Tenant. Use the `siteId` parameter to scope results to a specific Infrastructure Provider's Sites.
 
+### Expected Machine
+
+- `macAddress` attribute on Expected Machine Interface was deprecated in favor of `identifier.macAddress`. Create and update requests still accept it in place of `identifier`, or alongside `identifier.macAddress` when both name the same MAC address. Responses continue to return it for Interfaces that have a MAC address. Please use `identifier.macAddress` instead.
+
 ## Recent Deprecations
 
 Following deprecations were removed from the API in the recent past:

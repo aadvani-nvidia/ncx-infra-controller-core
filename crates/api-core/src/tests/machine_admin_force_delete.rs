@@ -1154,7 +1154,8 @@ async fn dpf_force_delete_test_env(pool: sqlx::PgPool, mut mock: MockDpfOperatio
             url: "https://example.com/test-service".to_string(),
         }])
     });
-    mock.expect_register_dpu_device().returning(|_, _| Ok(()));
+    mock.expect_register_dpu_device()
+        .returning(|_, _, _| Ok(()));
     mock.expect_register_dpu_node().returning(|_| Ok(()));
     mock.expect_release_maintenance_hold().returning(|_| Ok(()));
     mock.expect_is_reboot_required().returning(|_| Ok(false));
