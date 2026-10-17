@@ -205,7 +205,7 @@ fn validate_fixed_addresses(data: &ExpectedMachineData) -> Result<(), CarbideErr
         {
             return Err(CarbideError::InvalidArgument(format!(
                 "interfaces entry {}: fixed_ip {address} {NOT_A_SINGLE_INTERFACE_ADDRESS}",
-                interface.mac_address,
+                interface.identity(),
             )));
         }
     }
@@ -1547,7 +1547,7 @@ mod tests {
                 });
                 let fixed_ip = is_valid(ExpectedMachineData {
                     interfaces: vec![ExpectedInterface {
-                        mac_address: interface_mac_address,
+                        mac_address: Some(interface_mac_address),
                         fixed_ip: Some(address),
                         ..Default::default()
                     }],

@@ -34,7 +34,7 @@ use carbide_dpf::{
 };
 use carbide_uuid::machine::{DpuMachineId, HostMachineId};
 use model::dpu_machine_update::OutdatedDpfDpu;
-use model::expected_machine::ExpectedInterface;
+use model::expected_machine::ExpectedMachine;
 use model::machine::{DpuMachine, ManagedHostStateSnapshot};
 use model::machine_pending_action::{MachinePendingAction, MachinePendingActionKind};
 use sqlx::PgPool;
@@ -65,11 +65,12 @@ pub const HOST_BMC_IP_LABEL: &str = "carbide.nvidia.com/host-bmc-ip";
 #[cfg_attr(feature = "test-support", mockall::automock)]
 #[async_trait]
 pub trait DpfOperations: Send + Sync + std::fmt::Debug {
-    /// Register a DPU device, using declared host NICs only for Astra deployments.
+    /// Register a DPU device using the full expected-machine entry when available.
+    /// The expected-machine entry contains credentials and must not be logged.
     async fn register_dpu_device(
         &self,
         info: DpuDeviceInfo,
-        host_nics: Vec<ExpectedInterface>,
+        expected_machine: Option<ExpectedMachine>,
         deployment_type: DpuDeploymentType,
     ) -> Result<(), DpfError>;
 
@@ -799,18 +800,18 @@ impl DpfOperations for DpfSdkOps {
     async fn register_dpu_device(
         &self,
         info: DpuDeviceInfo,
-        host_nics: Vec<ExpectedInterface>,
+        expected_machine: Option<ExpectedMachine>,
         deployment_type: DpuDeploymentType,
     ) -> Result<(), DpfError> {
-        // Only Astra deployments consume the declared CX9 underlay interfaces.
-        let astra_config = (deployment_type == DpuDeploymentType::Bf4Astra).then(|| {
-            let nics = host_nics
-                .iter()
-                .filter(|nic| nic.nic_type.as_deref() == Some("CX9"))
-                .collect();
-            (nics, self.astra_route_prefixes)
-        });
-        self.sdk.register_dpu_device(info, astra_config).await
+        // For BF4 Astra, pair the expected-machine entry with site-configured route
+        // prefixes. The SDK uses this to build the values passed to the dpudevice.
+        let astra_provisioning_inputs = expected_machine
+            .as_ref()
+            .filter(|_| deployment_type == DpuDeploymentType::Bf4Astra)
+            .map(|machine| (machine, self.astra_route_prefixes));
+        self.sdk
+            .register_dpu_device(info, astra_provisioning_inputs)
+            .await
     }
 
     async fn register_dpu_node(&self, info: DpuNodeInfo) -> Result<(), DpfError> {

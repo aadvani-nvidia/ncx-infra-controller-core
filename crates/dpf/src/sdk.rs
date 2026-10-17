@@ -27,7 +27,7 @@ use std::time::Duration;
 use carbide_utils::none_if_empty::NoneIfEmpty;
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::core::ObjectMeta;
-use model::expected_machine::ExpectedInterface;
+use model::expected_machine::{ExpectedInterface, ExpectedMachine};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -3321,16 +3321,28 @@ impl<R: DpuDeviceRepository, L: ResourceLabeler> DpfSdk<R, L> {
 
     /// Register a new DPU device.
     ///
-    /// astra_config includes declared CX9 NICs and resolved rail/software-plane prefix lengths.
+    /// `astra_provisioning_inputs` pairs the expected-machine entry (host name and
+    /// CX9 interfaces) with the site-configured rail/software-plane route prefixes.
+    /// The expected-machine entry contains credentials and must not be logged or serialized.
     ///
     /// This operation is idempotent - if the device already exists, it will be
     /// skipped. This handles state machine retries gracefully.
     pub async fn register_dpu_device(
         &self,
         info: DpuDeviceInfo,
-        astra_config: Option<(Vec<&ExpectedInterface>, AstraRoutePrefixes)>,
+        astra_provisioning_inputs: Option<(&ExpectedMachine, AstraRoutePrefixes)>,
     ) -> Result<(), DpfError> {
         let cr_name = dpu_device_cr_name(&info.device_id);
+        let expected_machine = astra_provisioning_inputs.map(|(machine, _)| machine);
+        let astra_underlay_inputs = astra_provisioning_inputs.map(|(machine, prefixes)| {
+            let nics = machine
+                .data
+                .interfaces
+                .iter()
+                .filter(|nic| nic.nic_type.as_deref() == Some("CX9"))
+                .collect::<Vec<_>>();
+            (nics, prefixes)
+        });
 
         // Values are supplied only on creation. In particular, do not require
         // complete Astra NIC declarations when this is an idempotent retry for
@@ -3345,7 +3357,7 @@ impl<R: DpuDeviceRepository, L: ResourceLabeler> DpfSdk<R, L> {
                 )));
             }
             if existing.spec.values.is_none()
-                && let Some((astra_nics, route_prefixes)) = astra_config.as_ref()
+                && let Some((astra_nics, route_prefixes)) = astra_underlay_inputs.as_ref()
             {
                 let values = astra_underlay_configuration(&cr_name, astra_nics, *route_prefixes)?;
                 DpuDeviceRepository::patch(
@@ -3370,7 +3382,7 @@ impl<R: DpuDeviceRepository, L: ResourceLabeler> DpfSdk<R, L> {
         }
 
         // Build Astra values from the declared MAC addresses and fixed underlay IPs.
-        let values = match astra_config {
+        let mut values = match astra_underlay_inputs {
             Some((astra_nics, route_prefixes)) => Some(astra_underlay_configuration(
                 &cr_name,
                 &astra_nics,
@@ -3378,6 +3390,13 @@ impl<R: DpuDeviceRepository, L: ResourceLabeler> DpfSdk<R, L> {
             )?),
             None => None,
         };
+        let server_name = expected_machine.and_then(|machine| machine.data.server_name.as_deref());
+        if values.is_some() || server_name.is_some() {
+            values.get_or_insert_with(BTreeMap::new).insert(
+                "server_name".to_string(),
+                json!(server_name.unwrap_or_default()),
+            );
+        }
 
         tracing::info!(device_name = %cr_name, "Registering DPU device");
 
@@ -7298,32 +7317,62 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_dpu_device() {
-        let mock = SdkMock::new();
-        let sdk = DpfSdkBuilder::new(mock.clone(), TEST_NAMESPACE, String::new())
-            .build_without_resources()
-            .await
-            .unwrap();
+        for (scenario, astra, server_name) in [
+            ("generic", false, None),
+            ("Astra with server name", true, Some("server-01")),
+            ("Astra without server name", true, None),
+        ] {
+            let mock = SdkMock::new();
+            let sdk = DpfSdkBuilder::new(mock.clone(), TEST_NAMESPACE, String::new())
+                .build_without_resources()
+                .await
+                .unwrap();
+            let expected = ExpectedMachine {
+                id: None,
+                bmc_mac_address: "02:00:00:00:00:01".parse().unwrap(),
+                data: model::expected_machine::ExpectedMachineData {
+                    server_name: server_name.map(str::to_owned),
+                    interfaces: astra_declared_interfaces(),
+                    bmc_username: "fixture-user".to_string(),
+                    bmc_password: "fixture-password-must-not-leak".to_string(),
+                    ..Default::default()
+                },
+            };
+            let astra_provisioning_inputs = astra.then_some((
+                &expected,
+                AstraRoutePrefixes {
+                    rail_route_prefix_len: 16,
+                    software_plane_route_prefix_len: 13,
+                },
+            ));
+            sdk.register_dpu_device(test_dpu_device_info(), astra_provisioning_inputs)
+                .await
+                .unwrap();
 
-        let info = DpuDeviceInfo {
-            device_id: "dpu-001".to_string(),
-            dpu_bmc_ip: "10.0.0.10".parse().unwrap(),
-            host_bmc_ip: "10.0.0.1".parse().unwrap(),
-            serial_number: "SN123456".to_string(),
-            dpu_machine_id: "dpu-bbb".to_string(),
-            is_primary: true,
-        };
-
-        sdk.register_dpu_device(info, None).await.unwrap();
-
-        let devices = DpuDeviceRepository::list(&mock, TEST_NAMESPACE)
-            .await
-            .unwrap();
-        assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].spec.serial_number, "SN123456");
-        assert!(matches!(
-            devices[0].spec.bmc_factory_reset_policy.as_ref(),
-            Some(DpuDeviceBmcFactoryResetPolicy::Never)
-        ));
+            let devices = DpuDeviceRepository::list(&mock, TEST_NAMESPACE)
+                .await
+                .unwrap();
+            assert_eq!(devices.len(), 1, "{scenario}");
+            assert_eq!(devices[0].spec.serial_number, "SN123456", "{scenario}");
+            assert!(matches!(
+                devices[0].spec.bmc_factory_reset_policy.as_ref(),
+                Some(DpuDeviceBmcFactoryResetPolicy::Never)
+            ));
+            if astra {
+                let values = devices[0].spec.values.as_ref().unwrap();
+                assert_eq!(
+                    values["server_name"],
+                    json!(server_name.unwrap_or_default())
+                );
+                assert_eq!(values.len(), 2);
+                assert!(values.contains_key("dpu_device_underlay_rows"));
+            } else {
+                assert!(devices[0].spec.values.is_none());
+            }
+            let serialized = serde_json::to_string(&devices[0]).unwrap();
+            assert!(!serialized.contains("fixture-user"));
+            assert!(!serialized.contains("fixture-password-must-not-leak"));
+        }
     }
 
     fn astra_declared_interfaces() -> Vec<ExpectedInterface> {
@@ -9103,10 +9152,15 @@ mod tests {
         };
         // An existing DPUDevice is left untouched, so a retry does not need a
         // complete Astra NIC declarations just to re-validate creation-only values.
+        let expected = ExpectedMachine {
+            id: None,
+            bmc_mac_address: "02:00:00:00:00:01".parse().unwrap(),
+            data: Default::default(),
+        };
         sdk.register_dpu_device(
             info,
             Some((
-                vec![],
+                &expected,
                 AstraRoutePrefixes {
                     rail_route_prefix_len: 16,
                     software_plane_route_prefix_len: 13,
