@@ -27,7 +27,7 @@ use carbide_dpf::{DpfError, DpuDeploymentType, DpuPhase, dpu_node_cr_name};
 use carbide_libmlx_model::nvconfig::DpuNvConfigProfile;
 use carbide_uuid::machine::{DpuMachineId, MachineId, MachineIdSubtypeTrait};
 use libredfish::SystemPowerControl;
-use model::expected_machine::ExpectedInterface;
+use model::expected_machine::ExpectedMachine;
 use model::hardware_info::HardwareInfo;
 use model::machine::{
     DpfState, DpuInitState, DpuMachine, DpuReprovisionStates, FailureCause, FailureDetails,
@@ -416,7 +416,7 @@ async fn create_and_register_dpudevices_and_dpunode(
     state: &ManagedHostStateSnapshot,
     dpf_sdk: &dyn DpfOperations,
     deployment_type: DpuDeploymentType,
-    host_nics: &[ExpectedInterface],
+    expected_machine: Option<&ExpectedMachine>,
 ) -> Result<(), DpfResourceRegistrationError> {
     let primary_dpu_id = state
         .host_snapshot
@@ -475,7 +475,7 @@ async fn create_and_register_dpudevices_and_dpunode(
             is_primary: dpu.id == primary_dpu_id,
         };
         dpf_sdk
-            .register_dpu_device(device_info, host_nics.to_vec(), deployment_type)
+            .register_dpu_device(device_info, expected_machine.cloned(), deployment_type)
             .await
             .map_err(classify_dpf_registration_error)?;
     }
@@ -591,10 +591,15 @@ async fn handle_dpf_provisioning(
     state: &ManagedHostStateSnapshot,
     dpf_sdk: &dyn DpfOperations,
     deployment_type: DpuDeploymentType,
-    host_nics: &[ExpectedInterface],
+    expected_machine: Option<&ExpectedMachine>,
 ) -> Result<StateHandlerOutcome<ManagedHostState>, StateHandlerError> {
-    match create_and_register_dpudevices_and_dpunode(state, dpf_sdk, deployment_type, host_nics)
-        .await
+    match create_and_register_dpudevices_and_dpunode(
+        state,
+        dpf_sdk,
+        deployment_type,
+        expected_machine,
+    )
+    .await
     {
         Ok(()) => {}
         Err(DpfResourceRegistrationError::CredentialUnavailable(error)) => {
@@ -910,10 +915,16 @@ pub(super) async fn handle_dpf_deployment_migration(
         ));
     }
 
-    let host_nics = get_expected_host_nics_for_mh(state, ctx).await?;
-    let astra_nics = host_nics
-        .iter()
-        .any(|nic| nic.nic_type.as_deref() == Some("CX9"));
+    let expected_machine = super::get_expected_machine_for_mh(state, ctx).await?;
+    // This boolean tells deployment selection whether expected inventory has CX9 NICs,
+    // so migration checks use the appropriate Astra or generic deployment type.
+    let astra_nics = expected_machine.as_ref().is_some_and(|machine| {
+        machine
+            .data
+            .interfaces
+            .iter()
+            .any(|nic| nic.nic_type.as_deref() == Some("CX9"))
+    });
     let deployment_types = deployment_types_for_host(state, ctx, dpf_sdk, astra_nics).await?;
     let desired_deployment = match consistent_deployment_type(&deployment_types) {
         Ok(deployment_type) => deployment_type,
@@ -987,7 +998,7 @@ async fn handle_dpf_reprovisioning(
     ctx: &mut StateHandlerContext<'_, MachineStateHandlerContextObjects>,
     dpf_sdk: &dyn DpfOperations,
     deployment_type: DpuDeploymentType,
-    host_nics: &[ExpectedInterface],
+    expected_machine: Option<&ExpectedMachine>,
 ) -> Result<StateHandlerOutcome<ManagedHostState>, StateHandlerError> {
     let dpu_machine_id = dpu_snapshot.id;
     let node_name = dpu_node_cr_name(&dpf_id(&state.host_snapshot)?);
@@ -1000,8 +1011,13 @@ async fn handle_dpf_reprovisioning(
             machine_id = %state.host_snapshot.id,
             "DPUDevice/DPUNode CRs do not exist, creating them before reprovisioning"
         );
-        match create_and_register_dpudevices_and_dpunode(state, dpf_sdk, deployment_type, host_nics)
-            .await
+        match create_and_register_dpudevices_and_dpunode(
+            state,
+            dpf_sdk,
+            deployment_type,
+            expected_machine,
+        )
+        .await
         {
             Ok(()) => {}
             Err(DpfResourceRegistrationError::CredentialUnavailable(error)) => {
@@ -1038,19 +1054,6 @@ async fn handle_dpf_reprovisioning(
     Ok(StateHandlerOutcome::transition(next))
 }
 
-// Use declared inventory for both deployment selection and DPUDevice values;
-// discovered DPA interfaces may not yet be populated during ingestion.
-async fn get_expected_host_nics_for_mh(
-    state: &ManagedHostStateSnapshot,
-    ctx: &mut StateHandlerContext<'_, MachineStateHandlerContextObjects>,
-) -> Result<Vec<ExpectedInterface>, StateHandlerError> {
-    let expected_machine = super::get_expected_machine_for_mh(state, ctx).await?;
-
-    Ok(expected_machine
-        .map(|machine| machine.data.interfaces)
-        .unwrap_or_default())
-}
-
 /// Handle DPF state transitions.
 ///
 /// Provisioning registers all DPUs at once and moves them to WaitingForReady
@@ -1068,10 +1071,16 @@ pub(super) async fn handle_dpf_state(
     let dpu_machine_id = dpu_snapshot.id;
     let node_name = dpu_node_cr_name(&dpf_id(&state.host_snapshot)?);
 
-    let host_nics = get_expected_host_nics_for_mh(state, ctx).await?;
-    let astra_nics = host_nics
-        .iter()
-        .any(|nic| nic.nic_type.as_deref() == Some("CX9"));
+    // Use expected inventory before discovered DPA interfaces are populated.
+    // Keep this credential-bearing entry out of tracing and Debug-derived structs.
+    let expected_machine = super::get_expected_machine_for_mh(state, ctx).await?;
+    let astra_nics = expected_machine.as_ref().is_some_and(|machine| {
+        machine
+            .data
+            .interfaces
+            .iter()
+            .any(|nic| nic.nic_type.as_deref() == Some("CX9"))
+    });
 
     let deployment_types = deployment_types_for_host(state, ctx, dpf_sdk, astra_nics).await?;
     let mut deployment_type = match consistent_deployment_type(&deployment_types) {
@@ -1163,7 +1172,8 @@ pub(super) async fn handle_dpf_state(
 
     match dpf_state {
         DpfState::Provisioning => {
-            handle_dpf_provisioning(state, dpf_sdk, deployment_type, &host_nics).await
+            handle_dpf_provisioning(state, dpf_sdk, deployment_type, expected_machine.as_ref())
+                .await
         }
         DpfState::WaitingForReady { phase_detail } => {
             handle_dpf_waiting_for_ready(
@@ -1196,7 +1206,7 @@ pub(super) async fn handle_dpf_state(
                 ctx,
                 dpf_sdk,
                 deployment_type,
-                &host_nics,
+                expected_machine.as_ref(),
             )
             .await
         }

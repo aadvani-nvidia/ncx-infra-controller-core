@@ -1633,6 +1633,7 @@ fn dhcp_acl_rules(interfaces: Option<&[DpuServiceInterfaceTemplateDefinition]>) 
     rules
 }
 
+// Fixed interface mappings for VR200
 fn interface_fixed_mapping_raw() -> String {
     concat!(
         "pci_address,phys_port_name,cerebro_interface_name\n",
@@ -1739,14 +1740,20 @@ fn ovs_cerebro_script_raw() -> &'static str {
         _ovs-vsctl set bridge br-xplane datapath_type=netdev
         _ovs-vsctl set bridge br-xplane fail_mode=secure
 
-        # Add brcx-r<n>swpln<m> bridges and add A<x>p<y> netdev ports
+        # Add brcx-<netdev prefix> bridges and add A<x>p<y> netdev ports
         # to br-xplane bridge with group-id set as r<n>swpln<m>
         RAILS=(0 1 2 3)
         SW_PLANES=(0 1)
         HW_PLANES=(0 1 2 3)
         for rail in "${RAILS[@]}"; do
           for sw_plane in "${SW_PLANES[@]}"; do
-            bridge="brcx-r${rail}swpln${sw_plane}"
+            logical_ifname="eth_r${rail}_p$((4 * sw_plane))"
+            netdev_name="${NETDEV_BY_INTERFACES[$logical_ifname]:-}"
+            if [[ ! "$netdev_name" =~ ^(.+)p[0-9]+$ ]]; then
+              echo "ovs-script.sh: netdev $netdev_name for $logical_ifname has no p<port> suffix" >&2
+              return 1
+            fi
+            bridge="brcx-${BASH_REMATCH[1]}"
             _ovs-vsctl --may-exist add-br "$bridge"
             _ovs-vsctl set bridge "$bridge" datapath_type=netdev
             _ovs-vsctl set bridge "$bridge" fail_mode=standalone
@@ -1829,7 +1836,7 @@ fn ovs_legacy_script_raw() -> &'static str {
         _ovs-vsctl set bridge br-xplane datapath_type=netdev
         _ovs-vsctl set bridge br-xplane fail_mode=secure
 
-        # Configure brcx-r<n>swpln<m> brdiges using mappings below.
+        # Configure brcx-<interface prefix> bridges using the mappings below.
         # Each row is:
         # interface prefix | PCI address | bridge | xplane group ID
         XPLANE_ROWS=(
@@ -1846,6 +1853,7 @@ fn ovs_legacy_script_raw() -> &'static str {
 
         for row in "${XPLANE_ROWS[@]}"; do
             IFS='|' read -r iface_prefix pci_address bridge group_id <<< "$row"
+            bridge="brcx-${iface_prefix}"
             _ovs-vsctl --may-exist add-br "$bridge"
             _ovs-vsctl set bridge "$bridge" datapath_type=netdev
             _ovs-vsctl set bridge "$bridge" fail_mode=standalone
@@ -1914,6 +1922,7 @@ fn xplane_legacy_network_script_raw() -> String {
             local target_mac="$1" row iface_prefix pci bridge iface_val config_path
             for row in "${PCI_BRIDGE_ROWS[@]}"; do
                 IFS='|' read -r iface_prefix pci bridge <<< "$row"
+                bridge="brcx-${iface_prefix}"
                 iface_val="${iface_prefix}p0"
                 config_path="/sys/bus/pci/devices/${pci}/net/${iface_val}/smart_nic/pf/config"
                 if [ -r "$config_path" ] && grep -qiF "$target_mac" "$config_path"; then
@@ -1986,6 +1995,13 @@ fn xplane_network_preamble_raw() -> &'static str {
         LLDP_FILE="${LLDP_FILE:-/etc/lldpd.d/lldp-interfaces.conf}"
         NETPLAN_FILE="${NETPLAN_FILE:-/etc/netplan/99-cx9-rails.yaml}"
         OVS_CONFIG_SCRIPT="${OVS_CONFIG_SCRIPT:-/etc/mellanox/ovs-script.sh}"
+
+        # Escape the template value for Bash ANSI-C quoting without shell expansion.
+        SERVER_NAME=$'{{ with index . "server_name" }}{{ js . }}{{ end }}'
+        if [[ "$SERVER_NAME" == *$'\n'* || "$SERVER_NAME" == *$'\r'* ]]; then
+            echo "configure-xplane-network.sh: server name must be a single line" >&2
+            exit 1
+        fi
 
         declare -A NETDEV_BY_INTERFACES=()
         declare -a INTERFACES=()
@@ -2164,13 +2180,15 @@ fn xplane_find_netdevs_and_build_altnames_script_raw() -> &'static str {
 fn xplane_check_net_config_and_build_bridge_by_cerebro_script_raw() -> &'static str {
     indoc::indoc! {r#"
         bridge_for_cerebro() {
-            local cerebro_name="$1" rail sw_plane port interface_name
+            local cerebro_name="$1" rail sw_plane port interface_name netdev_name
             for rail in 0 1 2 3; do
                 for sw_plane in 0 1; do
                     for port in 0 1 2 3; do
                         interface_name="eth_r${rail}_p$((4 * sw_plane + port))"
                         if [ "${CEREBRO_BY_INTERFACE[$interface_name]:-}" = "$cerebro_name" ]; then
-                            printf 'brcx-r%sswpln%s\n' "$rail" "$sw_plane"
+                            netdev_name="${NETDEV_BY_INTERFACES[$interface_name]:-}"
+                            [[ "$netdev_name" =~ ^(.+)p[0-9]+$ ]] || return 1
+                            printf 'brcx-%s\n' "${BASH_REMATCH[1]}"
                             return 0
                         fi
                     done
@@ -2260,8 +2278,15 @@ fn xplane_build_lldp_tmp_configuration_script_raw() -> &'static str {
             'configure lldp portidsubtype macaddress' > "$LLDP_TMP_FILE" || exit 1
         for interface_name in "${INTERFACES[@]}"; do
             netdev_name="${NETDEV_BY_INTERFACES[$interface_name]}"
+            port_description="${CEREBRO_BY_INTERFACE[$interface_name]}"
+            if [ -n "${SERVER_NAME:-}" ]; then
+                port_description="$SERVER_NAME $port_description"
+            fi
+            # Quote the description for lldpcli's configuration parser.
+            port_description="${port_description//\\/\\\\}"
+            port_description="${port_description//\"/\\\"}"
             printf 'configure ports %s lldp portdescription "%s"\n' \
-                "$netdev_name" "${CEREBRO_BY_INTERFACE[$interface_name]}" \
+                "$netdev_name" "$port_description" \
                 >> "$LLDP_TMP_FILE" || exit 1
         done
 
@@ -2657,16 +2682,17 @@ export -f run_stage ovs-vsctl
     /// because changing its hash-derived name would reprovision existing DPUs.
     #[test]
     fn topology_free_astra_flavor_template_identity_is_stable() {
-        // Render the canonical predecessor input, including its inventory-derived SF capacity.
+        // Render the canonical input, including its inventory-derived SF capacity.
         let interfaces = crate::sdk::build_astra_dpu_interfaces_vec();
         let pf_total_sf = crate::sdk::calculate_astra_pf_total_sf(&interfaces)
             .expect("canonical Astra inventory must have valid SF capacity");
         let template = flavor_bf4_astra("ns", &None, pf_total_sf, &[], false).unwrap();
 
         // Pin the complete serialized template spec rather than one nested script.
+        // Bridge renaming and server-aware LLDP descriptions intentionally change this identity.
         assert_eq!(
             template.unique_name(DEFAULT_FLAVOR_NAME).unwrap(),
-            "dpu-flavor-97651f8d94f18f42"
+            "dpu-flavor-5f7c733822a9afe1"
         );
     }
 
@@ -2974,7 +3000,8 @@ done
             for index in 0..32 {
                 let pci = format!("0005:03:00.{:x}", index / 4);
                 let port = format!("p{}", index % 4);
-                let netdev = sysfs.join(&pci).join("net").join(format!("cx9_{index}"));
+                let netdev_name = format!("A{}p{}", index / 4, index % 4);
+                let netdev = sysfs.join(&pci).join("net").join(netdev_name);
                 fs::create_dir_all(&netdev).unwrap();
                 if scenario != "missing_netdev" || index != 31 {
                     fs::write(netdev.join("phys_port_name"), format!("{port}\n")).unwrap();
@@ -3027,7 +3054,7 @@ done
                                     if [ "$TEST_CASE" = conflicting_altname ] && [ "$dev" = eth_r3_p7 ]; then
                                         builtin printf '99: wrong_netdev: mtu 9216\n'
                                     elif [ "$TEST_CASE" = existing_altname ] && [ "$dev" = eth_r0_p0 ]; then
-                                        builtin printf '1: cx9_0: mtu 9216\n'
+                                        builtin printf '1: A0p0: mtu 9216\n'
                                     else
                                         return 1
                                     fi
@@ -3088,7 +3115,7 @@ done
                         .find("property del dev wrong_netdev altname eth_r3_p7")
                         .unwrap();
                     let add = events
-                        .find("property add dev cx9_31 altname eth_r3_p7")
+                        .find("property add dev A7p3 altname eth_r3_p7")
                         .unwrap();
                     assert!(delete < add);
                     assert_eq!(events.matches("property del").count(), 1);
@@ -3097,11 +3124,7 @@ done
                 }
                 assert!(events.rfind("altname ").unwrap() < events.find("ovs\n").unwrap());
                 assert!(events.find("ovs\n").unwrap() < events.find("netplan\n").unwrap());
-                assert!(
-                    fs::read_to_string(&netplan)
-                        .unwrap()
-                        .contains("brcx-r0swpln0:")
-                );
+                assert!(fs::read_to_string(&netplan).unwrap().contains("brcx-A0:"));
                 if scenario == "shared_group_ip" {
                     let configuration: serde_yaml::Value =
                         serde_yaml::from_str(&fs::read_to_string(&netplan).unwrap()).unwrap();
@@ -3113,7 +3136,7 @@ done
                         1
                     );
                     assert_eq!(
-                        configuration["network"]["ethernets"]["brcx-r0swpln0"]["addresses"][0],
+                        configuration["network"]["ethernets"]["brcx-A0"]["addresses"][0],
                         "100.96.0.0/31"
                     );
                 }
@@ -3133,6 +3156,44 @@ done
             }
             fs::remove_dir_all(fixture).unwrap();
         }
+    }
+
+    #[test]
+    fn xplane_lldp_port_description_includes_server_name() {
+        let fixture =
+            std::env::temp_dir().join(format!("carbide-dpf-lldp-name-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&fixture).unwrap();
+        for (server_name, expected_description) in [
+            ("server-01", "server-01 C1-1-L1"),
+            ("", "C1-1-L1"),
+            (r#"server "one"\rack"#, r#"server \"one\"\\rack C1-1-L1"#),
+        ] {
+            let setup = indoc::indoc! {r#"
+                set -euo pipefail
+                INTERFACES=(eth_r0_p0)
+                declare -A NETDEV_BY_INTERFACES=([eth_r0_p0]=A53p0)
+                declare -A CEREBRO_BY_INTERFACE=([eth_r0_p0]=C1-1-L1)
+            "#};
+            let script = format!(
+                "{setup}{}\ncat -- \"$LLDP_TMP_FILE\"\n",
+                xplane_build_lldp_tmp_configuration_script_raw()
+            );
+            let output = Command::new("bash")
+                .arg("-c")
+                .arg(script)
+                .env("SERVER_NAME", server_name)
+                .env("LLDP_FILE", fixture.join("lldp.conf"))
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{server_name:?}: {output:?}");
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                format!(
+                    "configure system interface pattern *\nconfigure lldp portidsubtype macaddress\nconfigure ports A53p0 lldp portdescription \"{expected_description}\"\n"
+                )
+            );
+        }
+        fs::remove_dir_all(fixture).unwrap();
     }
 
     #[test]
@@ -3288,7 +3349,7 @@ done
         assert!(
             fs::read_to_string(&candidate)
                 .unwrap()
-                .contains("brcx-r1swpln0:")
+                .contains("brcx-A53:")
         );
         assert!(
             String::from_utf8_lossy(&output.stderr).contains(candidate.to_string_lossy().as_ref())
