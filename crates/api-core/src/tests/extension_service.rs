@@ -3011,7 +3011,7 @@ async fn test_endpoint_free_reference_repairs_shrunk_slots_after_family_disable(
     let mut initial_mock = MockDpfOperations::new();
     initial_mock
         .expect_register_dpu_device()
-        .returning(|_, _| Ok(()));
+        .returning(|_, _, _| Ok(()));
     initial_mock
         .expect_register_dpu_node()
         .returning(|_| Ok(()));
