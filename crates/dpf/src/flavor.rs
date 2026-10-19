@@ -1770,7 +1770,8 @@ fn ovs_cerebro_script_raw() -> &'static str {
               _ovs-vsctl set Interface "$netdev_name" type=dpdk
               _ovs-vsctl set Interface "$netdev_name" mtu_request=9216
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane=true
-              _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-group-id="r${rail}swpln${sw_plane}"
+              # Set the group id to match the downlink patch's physical NIC group ID, e.g. A56p2 -> A56.
+              _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-group-id="${netdev_name%p[0-9]}"
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-uplink=true
               _ovs-vsctl set Interface "$netdev_name" external_ids:xplane-plane-id="$hw_plane"
             done
@@ -1864,7 +1865,8 @@ fn ovs_legacy_script_raw() -> &'static str {
                 _ovs-vsctl set Interface "$interface_val" type=dpdk
                 _ovs-vsctl set Interface "$interface_val" mtu_request=9216
                 _ovs-vsctl set Interface "$interface_val" external_ids:xplane=true
-                _ovs-vsctl set Interface "$interface_val" external_ids:xplane-group-id="$group_id"
+                # Match the downlink patch's physical NIC group ID, e.g. A56.
+                _ovs-vsctl set Interface "$interface_val" external_ids:xplane-group-id="$iface_prefix"
                 _ovs-vsctl set Interface "$interface_val" external_ids:xplane-uplink=true
                 _ovs-vsctl set Interface "$interface_val" external_ids:xplane-plane-id="$hw_plane"
             done

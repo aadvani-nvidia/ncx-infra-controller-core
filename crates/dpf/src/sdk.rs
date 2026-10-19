@@ -1327,6 +1327,8 @@ pub fn build_deployment(
     }
 }
 
+// Pair each NIC's br-xplane patch with its Weave-managed brcx bridge patch on br-sfc.
+// DPF programs forwarding between their br-sfc endpoints using these interface resource names.
 fn build_astra_patch_service_chain_switches(
     interfaces: &[DpuServiceInterfaceTemplateDefinition],
 ) -> Vec<DpuDeploymentServiceChainsSwitches> {
@@ -1337,8 +1339,9 @@ fn build_astra_patch_service_chain_switches(
     astra_xplane_group_ids()
         .iter()
         .filter_map(|group_id| {
-            let cx_interface = format!("p-brcx-{group_id}-to-br-sfc");
-            let xplane_interface = format!("p-br-xplane-{group_id}-to-br-sfc");
+            let cx_interface = format!("p-brcx-{}-to-br-sfc", group_id.to_ascii_lowercase());
+            let xplane_interface =
+                format!("p-br-xplane-{}-to-br-sfc", group_id.to_ascii_lowercase());
             (interface_names.contains(cx_interface.as_str())
                 && interface_names.contains(xplane_interface.as_str()))
             .then(|| DpuDeploymentServiceChainsSwitches {
@@ -1364,10 +1367,7 @@ fn build_astra_patch_service_chain_switches(
 }
 
 fn astra_xplane_group_ids() -> [&'static str; 8] {
-    [
-        "r0swpln0", "r1swpln0", "r0swpln1", "r1swpln1", "r2swpln0", "r3swpln0", "r2swpln1",
-        "r3swpln1",
-    ]
+    ["A56", "A53", "A43", "A46", "A6", "A3", "A13", "A16"]
 }
 
 /// Returns the Astra component that owns an OVS name reserved outside intercept topology.
@@ -1710,13 +1710,16 @@ fn augment_astra_dpu_interfaces(
     Ok(interfaces)
 }
 
+// Define patch interfaces from br-sfc to each NIC's Weave-managed brcx bridge and from
+// br-sfc to br-xplane. build_astra_patch_service_chain_switches pairs these patch interfaces.
 fn build_astra_patch_dpu_interfaces_vec() -> Vec<DpuServiceInterfaceTemplateDefinition> {
     astra_xplane_group_ids()
         .into_iter()
         .flat_map(|group_id| {
+            // DPF patch-interface resource names require lowercase group IDs.
             [
                 DpuServiceInterfaceTemplateDefinition {
-                    name: format!("p-brcx-{group_id}-to-br-sfc"),
+                    name: format!("p-brcx-{}-to-br-sfc", group_id.to_ascii_lowercase()),
                     iface_type: DpuServiceInterfaceTemplateType::Patch(DpuServiceInterfacePatch {
                         peer_bridge: format!("brcx-{group_id}"),
                         peer_patch_name: String::new(),
@@ -1727,7 +1730,7 @@ fn build_astra_patch_dpu_interfaces_vec() -> Vec<DpuServiceInterfaceTemplateDefi
                     chained_svc_if: None,
                 },
                 DpuServiceInterfaceTemplateDefinition {
-                    name: format!("p-br-xplane-{group_id}-to-br-sfc"),
+                    name: format!("p-br-xplane-{}-to-br-sfc", group_id.to_ascii_lowercase()),
                     iface_type: DpuServiceInterfaceTemplateType::Patch(DpuServiceInterfacePatch {
                         peer_bridge: "br-xplane".to_string(),
                         peer_patch_name: String::new(),
@@ -5250,22 +5253,22 @@ mod tests {
                 "pf0vf13",
                 "p1",
                 "pf1hpf",
-                "p-brcx-r0swpln0-to-br-sfc",
-                "p-br-xplane-r0swpln0-to-br-sfc",
-                "p-brcx-r1swpln0-to-br-sfc",
-                "p-br-xplane-r1swpln0-to-br-sfc",
-                "p-brcx-r0swpln1-to-br-sfc",
-                "p-br-xplane-r0swpln1-to-br-sfc",
-                "p-brcx-r1swpln1-to-br-sfc",
-                "p-br-xplane-r1swpln1-to-br-sfc",
-                "p-brcx-r2swpln0-to-br-sfc",
-                "p-br-xplane-r2swpln0-to-br-sfc",
-                "p-brcx-r3swpln0-to-br-sfc",
-                "p-br-xplane-r3swpln0-to-br-sfc",
-                "p-brcx-r2swpln1-to-br-sfc",
-                "p-br-xplane-r2swpln1-to-br-sfc",
-                "p-brcx-r3swpln1-to-br-sfc",
-                "p-br-xplane-r3swpln1-to-br-sfc",
+                "p-brcx-a56-to-br-sfc",
+                "p-br-xplane-a56-to-br-sfc",
+                "p-brcx-a53-to-br-sfc",
+                "p-br-xplane-a53-to-br-sfc",
+                "p-brcx-a43-to-br-sfc",
+                "p-br-xplane-a43-to-br-sfc",
+                "p-brcx-a46-to-br-sfc",
+                "p-br-xplane-a46-to-br-sfc",
+                "p-brcx-a6-to-br-sfc",
+                "p-br-xplane-a6-to-br-sfc",
+                "p-brcx-a3-to-br-sfc",
+                "p-br-xplane-a3-to-br-sfc",
+                "p-brcx-a13-to-br-sfc",
+                "p-br-xplane-a13-to-br-sfc",
+                "p-brcx-a16-to-br-sfc",
+                "p-br-xplane-a16-to-br-sfc",
             ],
         );
         // Fourteen VFs plus four physical/PF entries and sixteen patches produce 34 interfaces;
@@ -5873,37 +5876,37 @@ mod tests {
             }
 
             "Astra rail bridge as a patch port" {
-                // OVS bridge and port names share a namespace, so a peer port cannot alias a rail.
-                ("br-host", "brcx-r0swpln0") => Some(
-                    "OVS name brcx-r0swpln0 for peer patch port on DPF intercept-bridging interface c2pf3 conflicts with BF4 Astra rail bridge for r0swpln0".to_string()
+                // OVS bridge names keep their physical case, which intercept patch names reject.
+                ("br-host", "brcx-A56") => Some(
+                    "DPF intercept bridging patch port name \"brcx-A56\" for interface c2pf3 must be non-empty, start with a lowercase ASCII letter, and contain only lowercase ASCII letters, digits, hyphens, or underscores".to_string()
                 ),
             }
 
             "Weave DHCP bridge as a patch port" {
-                // The long Weave bridge cannot be an intercept bridge, but remains valid as a port.
-                ("br-host", "br-dhcp-r0swpln0") => Some(
-                    "OVS name br-dhcp-r0swpln0 for peer patch port on DPF intercept-bridging interface c2pf3 conflicts with DOCA Weave DHCP bridge for r0swpln0".to_string()
+                // Weave DHCP names are already rejected by the lowercase intercept-name contract.
+                ("br-host", "br-dhcp-A56") => Some(
+                    "DPF intercept bridging patch port name \"br-dhcp-A56\" for interface c2pf3 must be non-empty, start with a lowercase ASCII letter, and contain only lowercase ASCII letters, digits, hyphens, or underscores".to_string()
                 ),
             }
 
             "Weave drop bridge as a patch port" {
-                // The separate drop bridge is owned by the same external Weave lifecycle.
-                ("br-host", "br-drop-r0swpln0") => Some(
-                    "OVS name br-drop-r0swpln0 for peer patch port on DPF intercept-bridging interface c2pf3 conflicts with DOCA Weave drop bridge for r0swpln0".to_string()
+                // Weave drop names are already rejected by the lowercase intercept-name contract.
+                ("br-host", "br-drop-A56") => Some(
+                    "DPF intercept bridging patch port name \"br-drop-A56\" for interface c2pf3 must be non-empty, start with a lowercase ASCII letter, and contain only lowercase ASCII letters, digits, hyphens, or underscores".to_string()
                 ),
             }
 
             "DPF-generated rail peer port" {
-                // The rail-side autogenerated orientation occupies the global OVS namespace.
-                ("br-host", "p_brcxr0swpln0_to_brsfc_0123abcd") => Some(
-                    "OVS name p_brcxr0swpln0_to_brsfc_0123abcd for peer patch port on DPF intercept-bridging interface c2pf3 conflicts with DPF-generated BF4 Astra rail patch port".to_string()
+                // The uppercase generated peer port fails syntax validation before ownership checks.
+                ("br-host", "p_brcxA56_to_brsfc_0123abcd") => Some(
+                    "DPF intercept bridging patch port name \"p_brcxA56_to_brsfc_0123abcd\" for interface c2pf3 must be non-empty, start with a lowercase ASCII letter, and contain only lowercase ASCII letters, digits, hyphens, or underscores".to_string()
                 ),
             }
 
             "DPF-generated rail local port" {
-                // A shorter peer name can make the topology's derived local name alias the other orientation.
-                ("br-host", "brcxr0swpln0_0123abcd") => Some(
-                    "OVS name p_brsfc_to_brcxr0swpln0_0123abcd for DPF-generated local patch port on DPF intercept-bridging interface c2pf3 conflicts with DPF-generated BF4 Astra rail patch port".to_string()
+                // This uppercase peer name is rejected before a local patch name is generated.
+                ("br-host", "brcxA56_0123abcd") => Some(
+                    "DPF intercept bridging patch port name \"brcxA56_0123abcd\" for interface c2pf3 must be non-empty, start with a lowercase ASCII letter, and contain only lowercase ASCII letters, digits, hyphens, or underscores".to_string()
                 ),
             }
 
@@ -6011,13 +6014,13 @@ mod tests {
             astra_resolved
                 .interfaces
                 .iter()
-                .any(|interface| interface.name == "p-brcx-r0swpln0-to-br-sfc")
+                .any(|interface| interface.name == "p-brcx-a56-to-br-sfc")
         );
         assert!(
             astra_resolved
                 .interfaces
                 .iter()
-                .any(|interface| interface.name == "p-br-xplane-r3swpln1-to-br-sfc")
+                .any(|interface| interface.name == "p-br-xplane-a16-to-br-sfc")
         );
 
         let bf4_config = InitDpfResourcesConfigBuilder::default()
@@ -6033,7 +6036,7 @@ mod tests {
     fn initialization_rejects_conflicting_astra_patch_interface() {
         let mut interfaces = build_dpu_interfaces_vec();
         interfaces.push(DpuServiceInterfaceTemplateDefinition {
-            name: "p-brcx-r0swpln0-to-br-sfc".to_string(),
+            name: "p-brcx-a56-to-br-sfc".to_string(),
             iface_type: DpuServiceInterfaceTemplateType::Physical,
             pf_id: 0,
             vf_id: 0,
@@ -6047,7 +6050,7 @@ mod tests {
         assert!(matches!(
             config.build(),
             Err(DpfError::ConfigError(message))
-                if message.contains("p-brcx-r0swpln0-to-br-sfc")
+                if message.contains("p-brcx-a56-to-br-sfc")
                     && message.contains("reserved")
         ));
     }
@@ -6118,14 +6121,13 @@ mod tests {
                 .unwrap_or_else(|| panic!("Astra interface {name} must exist"))
         };
 
-        let cx = build_service_interface(by_name("p-brcx-r0swpln0-to-br-sfc"), TEST_NAMESPACE);
+        let cx = build_service_interface(by_name("p-brcx-a56-to-br-sfc"), TEST_NAMESPACE);
         let cx_patch = cx.spec.template.spec.template.spec.patch.as_ref().unwrap();
-        assert_eq!(cx_patch.peer_bridge, "brcx-r0swpln0");
+        assert_eq!(cx_patch.peer_bridge, "brcx-A56");
         assert!(cx_patch.peer_patch_name.is_none());
         assert!(cx_patch.peer_external_i_ds.is_none());
 
-        let xplane =
-            build_service_interface(by_name("p-br-xplane-r3swpln1-to-br-sfc"), TEST_NAMESPACE);
+        let xplane = build_service_interface(by_name("p-br-xplane-a16-to-br-sfc"), TEST_NAMESPACE);
         let xplane_patch = xplane
             .spec
             .template
@@ -6141,7 +6143,7 @@ mod tests {
             xplane_patch.peer_external_i_ds.as_ref(),
             Some(&BTreeMap::from([
                 ("xplane".to_string(), "true".to_string()),
-                ("xplane-group-id".to_string(), "r3swpln1".to_string()),
+                ("xplane-group-id".to_string(), "A16".to_string()),
                 ("xplane-downlink".to_string(), "patch".to_string()),
             ]))
         );
