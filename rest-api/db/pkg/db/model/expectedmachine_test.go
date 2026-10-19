@@ -1980,6 +1980,7 @@ func TestExpectedMachineSQLDAO_UpdateMultiple(t *testing.T) {
 		SiteID:              site.ID,
 		BmcMacAddress:       "00:1B:44:11:3A:D1",
 		ChassisSerialNumber: "CHASSIS-UPDATE-001",
+		ServerName:          cutil.GetPtr("original-server-1"),
 		CreatedBy:           user.ID,
 	})
 	assert.Nil(t, err)
@@ -1989,6 +1990,7 @@ func TestExpectedMachineSQLDAO_UpdateMultiple(t *testing.T) {
 		SiteID:              site.ID,
 		BmcMacAddress:       "00:1B:44:11:3A:D2",
 		ChassisSerialNumber: "CHASSIS-UPDATE-002",
+		ServerName:          cutil.GetPtr("original-server-2"),
 		Labels: map[string]string{
 			"original": "label",
 		},
@@ -2005,6 +2007,9 @@ func TestExpectedMachineSQLDAO_UpdateMultiple(t *testing.T) {
 		CreatedBy:                user.ID,
 	})
 	assert.Nil(t, err)
+
+	// Omitted server names must survive mixed batches and later unrelated updates.
+	serverNames := map[uuid.UUID]*string{em1.ID: em1.ServerName, em2.ID: em2.ServerName, em3.ID: em3.ServerName}
 
 	// OTEL Spanner configuration
 	_, _, ctx = testCommonTraceProviderSetup(t, ctx)
@@ -2023,6 +2028,7 @@ func TestExpectedMachineSQLDAO_UpdateMultiple(t *testing.T) {
 					ExpectedMachineID:   em1.ID,
 					BmcMacAddress:       cutil.GetPtr("00:1B:44:11:3A:E1"),
 					ChassisSerialNumber: cutil.GetPtr("CHASSIS-MODIFIED-001"),
+					ServerName:          cutil.GetPtr("updated-server-1"),
 					SkuID:               &sku.ID,
 					Labels: map[string]string{
 						"updated": "true",
@@ -2053,6 +2059,22 @@ func TestExpectedMachineSQLDAO_UpdateMultiple(t *testing.T) {
 			verifyChildSpanner: false,
 		},
 		{
+			desc: "server name only update",
+			inputs: []ExpectedMachineUpdateInput{{
+				ExpectedMachineID: em1.ID,
+				ServerName:        cutil.GetPtr("server-name-only-update"),
+			}},
+			expectedCount: 1,
+		},
+		{
+			desc: "clear one server name and preserve another",
+			inputs: []ExpectedMachineUpdateInput{
+				{ExpectedMachineID: em1.ID, ServerName: cutil.GetPtr("")},
+				{ExpectedMachineID: em2.ID},
+			},
+			expectedCount: 2,
+		},
+		{
 			desc: "batch update single expected machine",
 			inputs: []ExpectedMachineUpdateInput{
 				{
@@ -2075,6 +2097,10 @@ func TestExpectedMachineSQLDAO_UpdateMultiple(t *testing.T) {
 				// Verify updates and that results are returned in the same order as inputs
 				for i, em := range got {
 					assert.Equal(t, tc.inputs[i].ExpectedMachineID, em.ID, "result order should match input order")
+					if tc.inputs[i].ServerName != nil {
+						serverNames[em.ID] = cutil.GetPtrIfNotZero(*tc.inputs[i].ServerName)
+					}
+					assert.Equal(t, serverNames[em.ID], em.ServerName, "omitted server name must retain the persisted value")
 					if tc.inputs[i].BmcMacAddress != nil {
 						assert.Equal(t, *tc.inputs[i].BmcMacAddress, em.BmcMacAddress)
 					}

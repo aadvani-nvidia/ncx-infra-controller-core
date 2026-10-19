@@ -17,7 +17,7 @@
 
 //! State Handler implementation for Machines
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::mem::discriminant as enum_discr;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
@@ -2350,22 +2350,31 @@ impl MachineStateHandler {
             .create_redfish_client_from_machine(&mh_snapshot.host_snapshot)
             .await?;
 
-        let mac_address = redfish_client
-            .get_spx_nic_mac_address(nic_index)
-            .await
-            .map_err(|e| redfish_error("get_spx_nic_mac_address", e))?
-            .ok_or_else(|| StateHandlerError::MissingData {
-                object_id: mh_snapshot.host_snapshot.id.to_string(),
-                missing: "spx_nic_mac_address",
-            })?;
-
-        let mac_address = MacAddress::from_str(&mac_address).map_err(|e| {
-            tracing::error!(
-                machine_id = %mh_snapshot.host_snapshot.id,
-                "Invalid SPX NIC MAC address {mac_address}: {e}"
-            );
-            StateHandlerError::GenericError(eyre!("invalid SPX NIC MAC address {mac_address}: {e}"))
-        })?;
+        let legacy_nic = cx9_nics
+            .iter()
+            .all(|nic| nic.physical_ifname.is_none())
+            .then(|| cx9_nics[nic_index as usize]);
+        let mac_address = if let Some(nic) = legacy_nic {
+            nic.mac_address.ok_or_else(|| {
+                StateHandlerError::GenericError(eyre!(
+                    "legacy astra NIC {nic_index} has no MAC address"
+                ))
+            })?
+        } else {
+            let mac_address = redfish_client
+                .get_spx_nic_mac_address(nic_index)
+                .await
+                .map_err(|e| redfish_error("get_spx_nic_mac_address", e))?
+                .ok_or_else(|| StateHandlerError::MissingData {
+                    object_id: mh_snapshot.host_snapshot.id.to_string(),
+                    missing: "spx_nic_mac_address",
+                })?;
+            MacAddress::from_str(&mac_address).map_err(|e| {
+                StateHandlerError::GenericError(eyre!(
+                    "invalid SPX NIC MAC address {mac_address}: {e}"
+                ))
+            })?
+        };
 
         // An all-zero MAC (00:00:00:00:00:00) is syntactically valid and parses successfully, but it
         // never identifies a real NIC. Reject it so we do not register a bogus Astra interface.
@@ -2382,48 +2391,40 @@ impl MachineStateHandler {
         let cage_mpo_encoded_string =
             model::machine::astra::astra_get_cage_mpo_encoded_string(nic_index);
 
-        // We have to search through the cx9_nics array for all interfaces whose name starts with the cage_mpo_encoded_string.
-        // The entry in the cx9_nics array has this format:
-        //   {"physical_ifname":"C1-2-L1","ip":"100.65.2.210","nic_type":"CX9","logical_ifname":"eth_r0_p0"}
-        // Look in cx9_nics for an entry whose physical_ifname starts with cage_mpo_encoded_string and return the
-        // corresponding logical_ifname.
-        let fixed_ip = cx9_nics
-            .iter()
-            .find(|nic| {
-                nic.physical_ifname
-                    .as_deref()
-                    .is_some_and(|name| name.starts_with(&cage_mpo_encoded_string))
-            })
-            .and_then(|nic| nic.fixed_ip);
-
-        // If fixed_ip is not found above, print an error and retrun error.
-        // Otherwise, keep the fixed_ip to use in the dpa_interface object.
-        let Some(fixed_ip) = fixed_ip else {
-            tracing::error!(
-                machine_id = %mh_snapshot.host_snapshot.id,
-                "Fixed IP not found for Astra enablement"
-            );
-            return Err(StateHandlerError::GenericError(eyre!(
-                "fixed IP not found for astra enablement"
-            )));
-        };
-
-        // We need to retreive the DPU pci device name of this device using cage_mpo_encoded_string.
-        // Append the string "_L1" to cage_mpo_encoded_string and lookup that name in ASTRA_NIC_MAPPINGS
-        // and get the dpu_pci_address field.
-        let dpu_pci_address = model::machine::astra::astra_dpu_pci_address_for_physical_ifname(
-            &format!("{cage_mpo_encoded_string}-L1"),
-        )
-        .map(|addr| addr.to_string());
-        // If dpu_pci_address is not found above, print an error and retrun error.
-        let Some(dpu_pci_address) = dpu_pci_address else {
-            tracing::error!(
-                machine_id = %mh_snapshot.host_snapshot.id,
-                "DPU PCI address not found for Astra enablement"
-            );
-            return Err(StateHandlerError::GenericError(eyre!(
-                "DPU PCI address not found for astra enablement"
-            )));
+        let (fixed_ip, dpu_pci_address) = if let Some(nic) = legacy_nic {
+            // Preserve the MAC/IP inventory's original indexed DPA registration.
+            let fixed_ip = nic.fixed_ip.ok_or_else(|| {
+                StateHandlerError::GenericError(eyre!(
+                    "fixed IP not found for legacy astra NIC {nic_index}"
+                ))
+            })?;
+            (fixed_ip, format!("CX_{nic_index}"))
+        } else {
+            // Every declared lane has a validated fixed IP. Use one lane's address
+            // for the card-level DPA registration.
+            let lane_prefix = format!("{cage_mpo_encoded_string}-L");
+            let fixed_ip = cx9_nics
+                .iter()
+                .filter(|nic| {
+                    nic.physical_ifname
+                        .as_deref()
+                        .is_some_and(|name| name.starts_with(&lane_prefix))
+                })
+                .find_map(|nic| nic.fixed_ip)
+                .ok_or_else(|| {
+                    StateHandlerError::GenericError(eyre!(
+                        "fixed IP not found for astra card {cage_mpo_encoded_string}"
+                    ))
+                })?;
+            let dpu_pci_address = model::machine::astra::astra_dpu_pci_address_for_physical_ifname(
+                &format!("{cage_mpo_encoded_string}-L1"),
+            )
+            .ok_or_else(|| {
+                StateHandlerError::GenericError(eyre!(
+                    "DPU PCI address not found for astra card {cage_mpo_encoded_string}"
+                ))
+            })?;
+            (fixed_ip, dpu_pci_address.to_string())
         };
 
         // Now enable EastWestControlEnabled on this card.
@@ -2522,9 +2523,10 @@ impl MachineStateHandler {
             .collect();
         let enabled_any_cx9 = !cx9_nics.is_empty();
 
-        for nic_index in 0..cx9_nics.len() {
+        // Validate and deduplicate lane declarations before making any Redfish changes.
+        for nic_index in astra_nic_indices(&cx9_nics)? {
             if let Err(e) = self
-                .enable_astra_nic(nic_index as u8, mh_snapshot, ctx, &cx9_nics)
+                .enable_astra_nic(nic_index, mh_snapshot, ctx, &cx9_nics)
                 .await
             {
                 tracing::error!(
@@ -6449,6 +6451,60 @@ fn report_has_release_pxe_blocking_network_alert(report: &HealthReport) -> bool 
         .alerts
         .iter()
         .any(is_release_pxe_blocking_network_alert)
+}
+
+/// Resolves declared lanes to distinct Redfish card indices. Only MAC-only legacy
+/// inventory uses declaration order; named inventory uses the fixed Astra topology.
+fn astra_nic_indices(cx9_nics: &[&ExpectedInterface]) -> Result<Vec<u8>, StateHandlerError> {
+    use model::machine::astra::{ASTRA_NIC_MAPPINGS, astra_get_cage_mpo_encoded_string};
+
+    let card_count = ASTRA_NIC_MAPPINGS
+        .iter()
+        .filter(|mapping| mapping.dpu_original_ifname.ends_with("p0"))
+        .count() as u8;
+    if cx9_nics.iter().all(|nic| nic.physical_ifname.is_none()) {
+        if cx9_nics.len() > usize::from(card_count) {
+            return Err(StateHandlerError::GenericError(eyre!(
+                "legacy astra inventory declares more than {card_count} cards"
+            )));
+        }
+        return Ok((0..cx9_nics.len() as u8).collect());
+    }
+
+    let mut indices = BTreeSet::new();
+    for nic in cx9_nics {
+        let physical_ifname = nic.physical_ifname.as_deref().ok_or_else(|| {
+            StateHandlerError::GenericError(eyre!(
+                "astra inventory cannot mix named lane and legacy indexed declarations"
+            ))
+        })?;
+        if nic.fixed_ip.is_none() {
+            return Err(StateHandlerError::GenericError(eyre!(
+                "fixed IP not found for astra lane {physical_ifname}"
+            )));
+        }
+        let mapping = ASTRA_NIC_MAPPINGS
+            .iter()
+            .find(|mapping| mapping.physical_ifname == physical_ifname)
+            .ok_or_else(|| {
+                StateHandlerError::GenericError(eyre!(
+                    "unknown astra physical interface {physical_ifname}"
+                ))
+            })?;
+        let index = (0..card_count)
+            .find(|index| {
+                mapping
+                    .physical_ifname
+                    .starts_with(&format!("{}-L", astra_get_cage_mpo_encoded_string(*index)))
+            })
+            .ok_or_else(|| {
+                StateHandlerError::GenericError(eyre!(
+                    "no redfish card index for astra physical interface {physical_ifname}"
+                ))
+            })?;
+        indices.insert(index);
+    }
+    Ok(indices.into_iter().collect())
 }
 
 /// Checks host and primary DPU health reports using their effective precedence.

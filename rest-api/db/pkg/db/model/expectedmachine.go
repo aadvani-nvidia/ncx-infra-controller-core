@@ -861,6 +861,8 @@ func (emsd ExpectedMachineSQLDAO) UpdateMultiple(ctx context.Context, tx *db.Tx,
 	// `bmc_ip_address` is applied only to rows that provide it. The shared
 	// column list would otherwise clear rows whose PATCH input omitted it.
 	bmcIPUpdates := make([]*ExpectedMachine, 0, len(inputs))
+	// Server names have the same omission semantics: update only supplied rows.
+	serverNameUpdates := make([]*ExpectedMachine, 0, len(inputs))
 	// host_lifecycle_profile is applied in its own bulk update scoped to only the
 	// rows that set it (see below), so rows that omit it keep their existing value.
 	hlpUpdates := make([]*ExpectedMachine, 0, len(inputs))
@@ -925,8 +927,10 @@ func (emsd ExpectedMachineSQLDAO) UpdateMultiple(ctx context.Context, tx *db.Tx,
 			columnsSet["description"] = true
 		}
 		if input.ServerName != nil {
-			em.ServerName = input.ServerName
-			columnsSet["server_name"] = true
+			serverNameUpdates = append(serverNameUpdates, &ExpectedMachine{
+				ID:         input.ExpectedMachineID,
+				ServerName: cutil.GetPtrIfNotZero(*input.ServerName),
+			})
 		}
 		if input.SlotID != nil {
 			em.SlotID = input.SlotID
@@ -976,6 +980,9 @@ func (emsd ExpectedMachineSQLDAO) UpdateMultiple(ctx context.Context, tx *db.Tx,
 		if len(bmcIPUpdates) > 0 {
 			traceColumns = append(traceColumns, "bmc_ip_address")
 		}
+		if len(serverNameUpdates) > 0 {
+			traceColumns = append(traceColumns, "server_name")
+		}
 		if len(hlpUpdates) > 0 {
 			traceColumns = append(traceColumns, "host_lifecycle_profile")
 		}
@@ -1000,6 +1007,17 @@ func (emsd ExpectedMachineSQLDAO) UpdateMultiple(ctx context.Context, tx *db.Tx,
 		_, err = db.GetIDB(tx, emsd.dbSession).NewUpdate().
 			Model(&bmcIPUpdates).
 			Column("bmc_ip_address").
+			Bulk().
+			Exec(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(serverNameUpdates) > 0 {
+		_, err = db.GetIDB(tx, emsd.dbSession).NewUpdate().
+			Model(&serverNameUpdates).
+			Column("server_name").
 			Bulk().
 			Exec(ctx)
 		if err != nil {

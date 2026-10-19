@@ -384,7 +384,7 @@ func TestAPIExpectedMachineInterface_Validate(t *testing.T) {
 		}, wantErr: "must match identifier.macAddress"},
 		{name: "deprecated MAC beside Astra identifier", value: APIExpectedMachineInterface{
 			Identifier: astraIdentifier("C1-1-L1", nil), MacAddress: cutil.GetPtr("02:00:00:00:00:09"),
-		}, wantErr: "cannot be combined with identifier.astra"},
+		}},
 	}
 
 	for _, test := range tests {
@@ -548,6 +548,11 @@ func TestAPIExpectedMachineInterface_ToDBModel(t *testing.T) {
 			PhysicalIfname: cutil.GetPtr("C1-1-L1"), LogicalIfname: cutil.GetPtr("eth_r0_p0"),
 			NicType: cutil.GetPtr("CX9"), FixedIp: cutil.GetPtr("192.0.2.11"),
 		}},
+		{name: "Astra names and MAC round-trip together", input: &corev1.ExpectedHostNic{
+			MacAddress:     cutil.GetPtr("02:00:00:00:00:0A"),
+			PhysicalIfname: cutil.GetPtr("C1-1-L2"), LogicalIfname: cutil.GetPtr("eth_r0_p1"),
+			NicType: cutil.GetPtr("CX9"), FixedIp: cutil.GetPtr("192.0.2.11"),
+		}},
 		{name: "explicit zero values survive", input: &corev1.ExpectedHostNic{
 			MacAddress: cutil.GetPtr("02:00:00:00:00:09"), Primary: cutil.GetPtr(false),
 			NetworkSegmentType: corev1.NetworkSegmentType_TENANT.Enum(),
@@ -569,6 +574,7 @@ func TestAPIExpectedMachineInterface_ToDBModel(t *testing.T) {
 			require.NoError(t, json.Unmarshal(body, &request))
 			require.Len(t, request.Interfaces, 1)
 			require.NoError(t, request.Interfaces[0].Validate())
+			assert.Equal(t, restored, request.Interfaces[0].ToDBModel(), "round-trip must preserve every stored interface attribute")
 			patch := request.ToProto(&cdbm.ExpectedMachine{Interfaces: request.InterfacesToDBModel()})
 			wire, err := protojson.Marshal(patch)
 			require.NoError(t, err)
@@ -1683,6 +1689,8 @@ func TestAPIExpectedMachineUpdateRequest_ToProto(t *testing.T) {
 		{name: "interfaces replace Core host NICs", body: `{"interfaces":[{"macAddress":"02:00:00:00:00:09","nicType":"CX9","fixedIp":"192.0.2.9"}]}`, wantPaths: []string{"host_nics"}},
 		{name: "empty interfaces clear Core host NICs", body: `{"interfaces":[]}`, wantPaths: []string{"host_nics"}},
 		{name: "server name selects server_name path", body: `{"serverName":"server-1"}`, wantPaths: []string{"server_name"}},
+		{name: "empty server name clears Core state", body: `{"serverName":""}`, wantPaths: []string{"server_name"}},
+		{name: "null server name preserves Core state", body: `{"serverName":null}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1713,7 +1721,7 @@ func TestAPIExpectedMachineUpdateRequest_ToProto(t *testing.T) {
 				assert.Equal(t, corev1.BmcIpAllocationType_BMC_IP_ALLOCATION_TYPE_AUTO, decoded.GetExpectedMachine().GetBmcIpAllocation())
 			}
 			if request.ServerName != nil {
-				assert.Equal(t, "server-1", decoded.GetExpectedMachine().GetServerName())
+				assert.Equal(t, cutil.GetPtrIfNotZero(*request.ServerName), decoded.GetExpectedMachine().ServerName)
 			}
 			if request.Interfaces != nil {
 				require.Len(t, decoded.GetExpectedMachine().GetHostNics(), len(request.Interfaces))

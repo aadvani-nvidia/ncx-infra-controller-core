@@ -51,7 +51,7 @@ type ExpectedMachineUpdateRequest struct {
 	Model NullableString `json:"model,omitempty"`
 	// Description of this component
 	Description NullableString `json:"description,omitempty"`
-	// Optional server name advertised to connected switches in LLDP responses and used for cable validation. Omission or null preserves the current value.
+	// Optional server name advertised to connected switches in LLDP responses and used for cable validation. An empty string clears the current value. Omission or null preserves it.
 	ServerName NullableString `json:"serverName,omitempty"`
 	// Slot ID within the rack
 	SlotId NullableInt32 `json:"slotId,omitempty"`

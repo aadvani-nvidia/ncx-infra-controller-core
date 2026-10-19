@@ -157,15 +157,12 @@ func (i APIExpectedMachineInterface) Validate() error {
 	return nil
 }
 
-// validateMacAddress accepts the deprecated macAddress beside an identifier
-// only when it names the same MAC, so a returned interface can be sent back.
+// validateMacAddress allows the deprecated MAC alongside Astra names so returned
+// interfaces can be submitted unchanged. With a MAC identifier, both MACs must match.
 func (i APIExpectedMachineInterface) validateMacAddress(value interface{}) error {
 	macAddress, ok := value.(*string)
 	if !ok || macAddress == nil || i.Identifier == nil {
 		return nil
-	}
-	if i.Identifier.Astra != nil {
-		return errors.New("cannot be combined with identifier.astra")
 	}
 	if i.Identifier.MacAddress != nil &&
 		APIExpectedMachineInterfaceMacAddressIdentifier(*macAddress).ToDBModel() != i.Identifier.MacAddress.ToDBModel() {
@@ -451,7 +448,7 @@ type APIExpectedMachineUpdateRequest struct {
 	Model *string `json:"model"`
 	// Description is the optional description of the expected machine
 	Description *string `json:"description"`
-	// ServerName is the optional server name advertised to switches via LLDP
+	// ServerName is advertised via LLDP. Empty clears it; omission or null preserves it.
 	ServerName *string `json:"serverName"`
 	// SlotID is the optional slot identifier
 	SlotID *int32 `json:"slotId"`
@@ -524,8 +521,6 @@ func (emur *APIExpectedMachineUpdateRequest) Validate() error {
 			validation.NilOrNotEmpty.Error("Model cannot be empty")),
 		validation.Field(&emur.Description,
 			validation.NilOrNotEmpty.Error("Description cannot be empty")),
-		validation.Field(&emur.ServerName,
-			validation.NilOrNotEmpty.Error("ServerName cannot be empty")),
 	)
 
 	if err != nil {
@@ -552,6 +547,10 @@ func (emur *APIExpectedMachineUpdateRequest) ToProto(entity *cdbm.ExpectedMachin
 	// The DB row may still hold an address this PATCH omitted. Core needs
 	// the request value so nil preserves its reservation and "" clears it.
 	resource.BmcIpAddress = emur.BmcIpAddress
+	// A selected server_name without a value tells Core to remove the name.
+	if emur.ServerName != nil {
+		resource.ServerName = cutil.GetPtrIfNotZero(*emur.ServerName)
+	}
 	if emur.Interfaces != nil {
 		resource.HostNics = make([]*corev1.ExpectedHostNic, 0, len(emur.Interfaces))
 		for _, expectedInterface := range emur.Interfaces {

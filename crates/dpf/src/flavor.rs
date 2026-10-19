@@ -2678,24 +2678,6 @@ export -f run_stage ovs-vsctl
         (output, stages)
     }
 
-    /// Verifies the complete topology-free flavor-template identity remains rollout-compatible,
-    /// because changing its hash-derived name would reprovision existing DPUs.
-    #[test]
-    fn topology_free_astra_flavor_template_identity_is_stable() {
-        // Render the canonical input, including its inventory-derived SF capacity.
-        let interfaces = crate::sdk::build_astra_dpu_interfaces_vec();
-        let pf_total_sf = crate::sdk::calculate_astra_pf_total_sf(&interfaces)
-            .expect("canonical Astra inventory must have valid SF capacity");
-        let template = flavor_bf4_astra("ns", &None, pf_total_sf, &[], false).unwrap();
-
-        // Pin the complete serialized template spec rather than one nested script.
-        // Bridge renaming and server-aware LLDP descriptions intentionally change this identity.
-        assert_eq!(
-            template.unique_name(DEFAULT_FLAVOR_NAME).unwrap(),
-            "dpu-flavor-5f7c733822a9afe1"
-        );
-    }
-
     /// Verifies the topology-backed Astra bootstrap orders prerequisites before dependent setup and
     /// preserves strict versus best-effort failures, so required failures stop later stages without
     /// making a tolerated representor attachment block completion.

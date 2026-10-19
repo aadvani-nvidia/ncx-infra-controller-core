@@ -24,7 +24,7 @@ var _ MappedNullable = &ExpectedMachineInterface{}
 type ExpectedMachineInterface struct {
 	// Identifies the interface by MAC address or by its Astra names. Required unless the deprecated `macAddress` is supplied.
 	Identifier NullableExpectedMachineInterfaceIdentifier `json:"identifier,omitempty"`
-	// Deprecated in favor of `identifier.macAddress`. Identifies the interface by MAC address when `identifier` is omitted. When both are supplied they must name the same MAC address, and this field cannot be combined with `identifier.astra`. Responses return the interface's MAC address here when it has one, in uppercase colon-separated form.
+	// Deprecated in favor of `identifier.macAddress`. Identifies the interface by MAC address when `identifier` is omitted. When supplied alongside `identifier.macAddress`, both must name the same MAC address. This field may also accompany `identifier.astra` to preserve a MAC address alongside the Astra names. Responses return the interface's MAC address here when it has one, in uppercase colon-separated form.
 	// Deprecated
 	MacAddress NullableString `json:"macAddress,omitempty" validate:"regexp=^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"`
 	// Optional NIC type. Use `CX9` for ConnectX-9 interfaces on Astra hosts.

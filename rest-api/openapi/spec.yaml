@@ -29786,7 +29786,7 @@ components:
             - 'null'
           pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
           deprecated: true
-          description: Deprecated in favor of `identifier.macAddress`. Identifies the interface by MAC address when `identifier` is omitted. When both are supplied they must name the same MAC address, and this field cannot be combined with `identifier.astra`. Responses return the interface's MAC address here when it has one, in uppercase colon-separated form.
+          description: Deprecated in favor of `identifier.macAddress`. Identifies the interface by MAC address when `identifier` is omitted. When supplied alongside `identifier.macAddress`, both must name the same MAC address. This field may also accompany `identifier.astra` to preserve a MAC address alongside the Astra names. Responses return the interface's MAC address here when it has one, in uppercase colon-separated form.
         nicType:
           type:
             - string
@@ -30327,8 +30327,7 @@ components:
           type:
             - string
             - 'null'
-          minLength: 1
-          description: Optional server name advertised to connected switches in LLDP responses and used for cable validation. Omission or null preserves the current value.
+          description: Optional server name advertised to connected switches in LLDP responses and used for cable validation. An empty string clears the current value. Omission or null preserves it.
         slotId:
           type:
             - integer
