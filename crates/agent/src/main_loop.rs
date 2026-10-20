@@ -1193,13 +1193,16 @@ impl MainLoop {
                         .await
                     };
 
-                    // Astra (Weave EW VPC) reconciliation is independent of HBN/DHCP: it is
-                    // reported on network status below, but a failure here must not block
-                    // the HBN/DHCP bookkeeping (or the readiness gate) that follows.
-                    let astra_config_status = astra_weave::build_notify_weave_ew_vpc_astra_config(
-                        conf.astra_config.as_ref(),
-                    )
-                    .await;
+                    // Maintenance-only delivery must not reconcile Weave attachments.
+                    let mut astra_config_status = None;
+                    if let Some(astra_config) = conf.astra_config.as_ref()
+                        && astra_config.is_attachment_config_present.unwrap_or(true)
+                    {
+                        astra_config_status = Some(
+                            astra_weave::build_notify_weave_ew_vpc_astra_config(Some(astra_config))
+                                .await,
+                        );
+                    }
 
                     match (update_result, dhcp_result) {
                         (Ok(hbn_changed), Ok(dhcp_changed)) => {
@@ -1261,12 +1264,10 @@ impl MainLoop {
                     }
 
                     match astra_config_status {
-                        Ok(status) => {
-                            if conf.astra_config.is_some() {
-                                status_out.astra_config_status = Some(status);
-                            }
+                        Some(Ok(status)) => {
+                            status_out.astra_config_status = Some(status);
                         }
-                        Err(err) => {
+                        Some(Err(err)) => {
                             tracing::error!(
                                 error = format!("{err:#}"),
                                 "Notifying Weave EW VPC Astra config"
@@ -1276,6 +1277,7 @@ impl MainLoop {
                                 status_out.network_config_error = Some(err.to_string());
                             }
                         }
+                        None => {}
                     }
 
                     // In case of secondary DPU, the interface must be disabled if on admin network, else enabled.
@@ -1286,6 +1288,20 @@ impl MainLoop {
                     {
                         tracing::error!(error = format!("{err:#}"), "Updating interface state.");
                     }
+                }
+
+                // Xplane maintenance has no dependency on HBN being up. Its
+                // per-port failures are reported without changing HBN/DHCP
+                // acknowledgments or the readiness gate.
+                if let Some(astra_config) = conf.astra_config.as_ref()
+                    && astra_config.is_maintenance_config_present.unwrap_or(true)
+                {
+                    status_out.astra_config_status =
+                        crate::astra_xplane::build_notify_xplane_maintenance_config(
+                            astra_config,
+                            status_out.astra_config_status.take(),
+                        )
+                        .await;
                 }
 
                 // Feed the latest instance metadata to FMDS and acknowledge it
