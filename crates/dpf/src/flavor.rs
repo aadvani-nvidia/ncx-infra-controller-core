@@ -1741,7 +1741,7 @@ fn ovs_cerebro_script_raw() -> &'static str {
         _ovs-vsctl set bridge br-xplane fail_mode=secure
 
         # Add brcx-<netdev prefix> bridges and add A<x>p<y> netdev ports
-        # to br-xplane bridge with group-id set as r<n>swpln<m>
+        # to br-xplane bridge with the netdev prefix as the group ID.
         RAILS=(0 1 2 3)
         SW_PLANES=(0 1)
         HW_PLANES=(0 1 2 3)
@@ -1841,14 +1841,14 @@ fn ovs_legacy_script_raw() -> &'static str {
         # Each row is:
         # interface prefix | PCI address | bridge | xplane group ID
         XPLANE_ROWS=(
-            "A56|0005:06:00.0|brcx-r0swpln0|r0swpln0"
-            "A43|0004:03:00.0|brcx-r0swpln1|r0swpln1"
-            "A53|0005:03:00.0|brcx-r1swpln0|r1swpln0"
-            "A46|0004:06:00.0|brcx-r1swpln1|r1swpln1"
-            "A6|0000:06:00.0|brcx-r2swpln0|r2swpln0"
-            "A13|0001:03:00.0|brcx-r2swpln1|r2swpln1"
-            "A3|0000:03:00.0|brcx-r3swpln0|r3swpln0"
-            "A16|0001:06:00.0|brcx-r3swpln1|r3swpln1"
+            "A56|0005:06:00.0|brcx-A56|A56"
+            "A43|0004:03:00.0|brcx-A43|A43"
+            "A53|0005:03:00.0|brcx-A53|A53"
+            "A46|0004:06:00.0|brcx-A46|A46"
+            "A6|0000:06:00.0|brcx-A6|A6"
+            "A13|0001:03:00.0|brcx-A13|A13"
+            "A3|0000:03:00.0|brcx-A3|A3"
+            "A16|0001:06:00.0|brcx-A16|A16"
         )
         HW_PLANES=(0 1 2 3)
 
@@ -1901,14 +1901,14 @@ fn xplane_legacy_network_script_raw() -> String {
         # interface prefix | PCI address | bridge. The MAC-to-PCI association is read
         # from the SmartNIC PF config for each interface prefix's p0 port.
         PCI_BRIDGE_ROWS=(
-            "A53|0005:03:00.0|brcx-r1swpln0"
-            "A56|0005:06:00.0|brcx-r0swpln0"
-            "A43|0004:03:00.0|brcx-r0swpln1"
-            "A46|0004:06:00.0|brcx-r1swpln1"
-            "A3|0000:03:00.0|brcx-r3swpln0"
-            "A6|0000:06:00.0|brcx-r2swpln0"
-            "A13|0001:03:00.0|brcx-r2swpln1"
-            "A16|0001:06:00.0|brcx-r3swpln1"
+            "A53|0005:03:00.0|brcx-A53"
+            "A56|0005:06:00.0|brcx-A56"
+            "A43|0004:03:00.0|brcx-A43"
+            "A46|0004:06:00.0|brcx-A46"
+            "A3|0000:03:00.0|brcx-A3"
+            "A6|0000:06:00.0|brcx-A6"
+            "A13|0001:03:00.0|brcx-A13"
+            "A16|0001:06:00.0|brcx-A16"
         )
 
         # MAC address | address | gateway | /16 route | /13 route
@@ -3207,7 +3207,7 @@ done
     INTERFACES=(eth_r0_p0)
     declare -A NETDEV_BY_INTERFACES=([eth_r0_p0]=cx9_0)
     declare -A CEREBRO_BY_INTERFACE=([eth_r0_p0]=C1)
-    declare -A BRIDGE_BY_CEREBRO=([C1]=brcx-r0swpln0)
+    declare -A BRIDGE_BY_CEREBRO=([C1]=brcx-A56)
     DPU_DEVICE_UNDERLAY_ROWS=("C1||100.96.0.0/31|100.96.0.1|100.96.0.0/16|100.96.0.0/13|eth_r0_p0")
     write_count=0
     printf() {
@@ -4523,14 +4523,14 @@ done
                         .unwrap();
                     ovs_setup_script.contains("IFS='|' read -r iface_prefix pci_address bridge group_id")
                         && [
-                            "A53|0005:03:00.0|brcx-r1swpln0|r1swpln0",
-                            "A56|0005:06:00.0|brcx-r0swpln0|r0swpln0",
-                            "A43|0004:03:00.0|brcx-r0swpln1|r0swpln1",
-                            "A46|0004:06:00.0|brcx-r1swpln1|r1swpln1",
-                            "A3|0000:03:00.0|brcx-r3swpln0|r3swpln0",
-                            "A6|0000:06:00.0|brcx-r2swpln0|r2swpln0",
-                            "A13|0001:03:00.0|brcx-r2swpln1|r2swpln1",
-                            "A16|0001:06:00.0|brcx-r3swpln1|r3swpln1",
+                            "A53|0005:03:00.0|brcx-A53|A53",
+                            "A56|0005:06:00.0|brcx-A56|A56",
+                            "A43|0004:03:00.0|brcx-A43|A43",
+                            "A46|0004:06:00.0|brcx-A46|A46",
+                            "A3|0000:03:00.0|brcx-A3|A3",
+                            "A6|0000:06:00.0|brcx-A6|A6",
+                            "A13|0001:03:00.0|brcx-A13|A13",
+                            "A16|0001:06:00.0|brcx-A16|A16",
                         ]
                         .into_iter()
                         .all(|row| ovs_setup_script.contains(row))
