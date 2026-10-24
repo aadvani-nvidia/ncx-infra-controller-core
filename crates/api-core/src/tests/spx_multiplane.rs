@@ -387,6 +387,85 @@ async fn spx_multiplane_readback_persists_without_attachments_and_rejects_stale_
 }
 
 #[crate::sqlx_test]
+async fn spx_multiplane_invalid_declarations_preserve_network_config_poll(pool: sqlx::PgPool) {
+    let (env, host) = fixture(pool).await;
+    let mut txn = env.db_txn().await;
+    db::dpa_interface::persist(
+        model::dpa_interface::NewDpaInterface {
+            machine_id: *host.id,
+            mac_address: "00:11:22:33:44:55".parse().unwrap(),
+            device_type: "ConnectX9".to_string(),
+            pci_name: "0005:06:00.0".to_string(),
+            device_description: None,
+            interface_type: model::dpa_interface::DpaInterfaceType::Astra,
+        },
+        &mut txn,
+    )
+    .await
+    .unwrap();
+    txn.commit().await.unwrap();
+    let poll = || {
+        env.api.get_managed_host_network_config(Request::new(
+            forge::ManagedHostNetworkConfigRequest {
+                dpu_machine_id: Some(host.dpu().id),
+            },
+        ))
+    };
+    let mut expected_response = poll().await.unwrap().into_inner();
+    let astra = expected_response.astra_config.as_mut().unwrap();
+    assert_eq!(astra.astra_attachments.len(), 1);
+    assert_eq!(astra.multiplane_interfaces.len(), 32);
+    astra.multiplane_interfaces.clear();
+    astra.is_maintenance_config_present = Some(false);
+
+    let mut txn = env.db_txn().await;
+    let machine = host.host().db_machine(&mut txn).await;
+    let mut expected = db::expected_machine::find_by_bmc_mac_address(
+        &mut *txn,
+        machine.status.bmc_info.mac.unwrap(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let duplicate = expected
+        .data
+        .interfaces
+        .iter()
+        .find(|interface| interface.logical_ifname.as_deref() == Some("eth_r0_p0"))
+        .unwrap()
+        .clone();
+    expected.data.interfaces.push(duplicate);
+    db::expected_machine::update(&mut txn, &expected)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let response = poll().await.unwrap().into_inner();
+    assert_eq!(response, expected_response);
+    let id = host.id.into();
+    let error = env
+        .api
+        .get_machine_spx_multiplane(Request::new(forge::MachineSpxMultiplaneRequest {
+            machine_id: Some(id),
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::InvalidArgument);
+    let error = env
+        .api
+        .update_machine_spx_multiplane_maintenance(Request::new(update_request(
+            id,
+            Some(0),
+            0,
+            false,
+            None,
+        )))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code(), tonic::Code::InvalidArgument);
+}
+
+#[crate::sqlx_test]
 async fn spx_multiplane_requests_persist_and_reach_dpu_without_attachments(pool: sqlx::PgPool) {
     let (env, host) = fixture(pool).await;
     let id: MachineId = host.id.into();
