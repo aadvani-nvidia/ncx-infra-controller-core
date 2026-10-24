@@ -82,8 +82,25 @@ pub(super) async fn get_astra_config(
         .is_some_and(super::spx_multiplane::is_bf4_dpu);
     let multiplane_interfaces = if is_bf4_dpu && api.runtime_config.is_partial_multiplane_enabled()
     {
-        super::spx_multiplane::load_configuration(&mut txn, snapshot.host_snapshot.id)
-            .await?
+        let configuration = match super::spx_multiplane::load_configuration(
+            &mut txn,
+            snapshot.host_snapshot.id,
+        )
+        .await
+        {
+            Ok(configuration) => configuration,
+            Err(error @ CarbideError::InvalidArgument(_)) => {
+                tracing::warn!(
+                    machine_id = %snapshot.host_snapshot.id,
+                    %dpu_machine_id,
+                    error = %error,
+                    "spx-maintenance: [controller] Omitting maintenance configuration from DPU poll: invalid multiplane declaration",
+                );
+                None
+            }
+            Err(error) => return Err(error.into()),
+        };
+        configuration
             .map(|configuration| {
                 configuration
                     .interfaces
