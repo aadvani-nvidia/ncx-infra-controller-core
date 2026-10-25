@@ -149,6 +149,8 @@ async fn response(
 
 /// Store readback independently of attachment discovery. Ignore reports for an
 /// older desired revision so a delayed status cannot acknowledge a newer request.
+/// Maintenance mode observations are not recorded when partial-multiplane is
+/// disabled at the site level or if this is not BF4 astra.
 pub(super) async fn record_observations(
     txn: &mut PgConnection,
     id: HostMachineId,

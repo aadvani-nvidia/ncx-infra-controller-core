@@ -294,6 +294,7 @@ async fn spx_maintenance_public_commands_send_requests_and_show_requested_state(
             continue;
         }
         for value in [
+            "Physical interface",
             "Applied maintenance mode",
             "Observed revision",
             "Observed at",
@@ -331,7 +332,13 @@ async fn spx_maintenance_public_commands_send_requests_and_show_requested_state(
                 row.contains(status),
                 "{scenario}: incorrect first-DPU status in {row}"
             );
-            let timestamp = row.split('|').nth(6).unwrap().trim();
+            let physical_ifname = row.split('|').nth(2).unwrap().trim();
+            assert_eq!(
+                physical_ifname,
+                if name == "eth_r2_p6" { "C1-2-L1" } else { "" },
+                "{scenario}: physical interface must come from the reported netdev"
+            );
+            let timestamp = row.split('|').nth(7).unwrap().trim();
             if status == "Pending" {
                 assert!(row.contains("unknown") && timestamp.is_empty());
             } else {

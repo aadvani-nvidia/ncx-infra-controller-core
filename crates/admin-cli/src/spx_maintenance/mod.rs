@@ -22,6 +22,7 @@ mod args;
 pub(crate) use args::Args;
 use args::{Action, MaintenanceMode, PlaneSelector, RailSelector};
 use config_version::ConfigVersion;
+use model::machine::astra::ASTRA_NIC_MAPPINGS;
 use prettytable::{Table, row};
 use rpc::admin_cli::OutputFormat;
 use rpc::forge;
@@ -136,6 +137,7 @@ impl Run for Args {
                 let mut table = Table::new();
                 table.set_titles(row![
                     "Logical interface",
+                    "Physical interface",
                     "Applied maintenance mode",
                     "Observed revision",
                     "Status",
@@ -171,6 +173,14 @@ impl Run for Args {
                     };
                     table.add_row(row![
                         observed.logical_ifname,
+                        observed
+                            .netdev
+                            .as_deref()
+                            .and_then(|netdev| ASTRA_NIC_MAPPINGS
+                                .iter()
+                                .find(|mapping| mapping.dpu_original_ifname == netdev))
+                            .map(|mapping| mapping.physical_ifname)
+                            .unwrap_or_default(),
                         match observed.maintenance_mode {
                             Some(true) => "on",
                             Some(false) => "off",

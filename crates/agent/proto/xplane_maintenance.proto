@@ -23,11 +23,13 @@ service XplaneMaintenance {
 }
 
 message SetLinkMaintenanceRequest {
+  // PF Linux netdev name on the DPU (e.g. "A56p0").
   string pf_name = 1;
   optional bool enabled = 2;
 }
 
 message GetLinkMaintenanceRequest {
+  // PF Linux netdev name on the DPU (e.g. "A56p0").
   string pf_name = 1;
 }
 
