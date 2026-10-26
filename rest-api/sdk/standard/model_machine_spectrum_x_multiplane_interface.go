@@ -24,9 +24,9 @@ var _ MappedNullable = &MachineSpectrumXMultiplaneInterface{}
 
 // MachineSpectrumXMultiplaneInterface Desired configuration for one declared rail/plane interface.
 type MachineSpectrumXMultiplaneInterface struct {
-	LogicalIfname string `json:"logicalIfname"`
-	Rail          int32  `json:"rail"`
-	Plane         int32  `json:"plane"`
+	LogicalName string `json:"logicalName"`
+	Rail        int32  `json:"rail"`
+	Plane       int32  `json:"plane"`
 	// Null until an operator requests a mode. True disables links; false enables them.
 	ConfiguredMaintenanceMode NullableBool   `json:"configuredMaintenanceMode"`
 	Reference                 NullableString `json:"reference"`
@@ -39,9 +39,9 @@ type _MachineSpectrumXMultiplaneInterface MachineSpectrumXMultiplaneInterface
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewMachineSpectrumXMultiplaneInterface(logicalIfname string, rail int32, plane int32, configuredMaintenanceMode NullableBool, reference NullableString, revision string) *MachineSpectrumXMultiplaneInterface {
+func NewMachineSpectrumXMultiplaneInterface(logicalName string, rail int32, plane int32, configuredMaintenanceMode NullableBool, reference NullableString, revision string) *MachineSpectrumXMultiplaneInterface {
 	this := MachineSpectrumXMultiplaneInterface{}
-	this.LogicalIfname = logicalIfname
+	this.LogicalName = logicalName
 	this.Rail = rail
 	this.Plane = plane
 	this.ConfiguredMaintenanceMode = configuredMaintenanceMode
@@ -58,28 +58,28 @@ func NewMachineSpectrumXMultiplaneInterfaceWithDefaults() *MachineSpectrumXMulti
 	return &this
 }
 
-// GetLogicalIfname returns the LogicalIfname field value
-func (o *MachineSpectrumXMultiplaneInterface) GetLogicalIfname() string {
+// GetLogicalName returns the LogicalName field value
+func (o *MachineSpectrumXMultiplaneInterface) GetLogicalName() string {
 	if o == nil {
 		var ret string
 		return ret
 	}
 
-	return o.LogicalIfname
+	return o.LogicalName
 }
 
-// GetLogicalIfnameOk returns a tuple with the LogicalIfname field value
+// GetLogicalNameOk returns a tuple with the LogicalName field value
 // and a boolean to check if the value has been set.
-func (o *MachineSpectrumXMultiplaneInterface) GetLogicalIfnameOk() (*string, bool) {
+func (o *MachineSpectrumXMultiplaneInterface) GetLogicalNameOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return &o.LogicalIfname, true
+	return &o.LogicalName, true
 }
 
-// SetLogicalIfname sets field value
-func (o *MachineSpectrumXMultiplaneInterface) SetLogicalIfname(v string) {
-	o.LogicalIfname = v
+// SetLogicalName sets field value
+func (o *MachineSpectrumXMultiplaneInterface) SetLogicalName(v string) {
+	o.LogicalName = v
 }
 
 // GetRail returns the Rail field value
@@ -216,7 +216,7 @@ func (o MachineSpectrumXMultiplaneInterface) MarshalJSON() ([]byte, error) {
 
 func (o MachineSpectrumXMultiplaneInterface) ToMap() (map[string]interface{}, error) {
 	toSerialize := map[string]interface{}{}
-	toSerialize["logicalIfname"] = o.LogicalIfname
+	toSerialize["logicalName"] = o.LogicalName
 	toSerialize["rail"] = o.Rail
 	toSerialize["plane"] = o.Plane
 	toSerialize["configuredMaintenanceMode"] = o.ConfiguredMaintenanceMode.Get()
@@ -230,7 +230,7 @@ func (o *MachineSpectrumXMultiplaneInterface) UnmarshalJSON(data []byte) (err er
 	// by unmarshalling the object into a generic map with string keys and checking
 	// that every required field exists as a key in the generic map.
 	requiredProperties := []string{
-		"logicalIfname",
+		"logicalName",
 		"rail",
 		"plane",
 		"configuredMaintenanceMode",

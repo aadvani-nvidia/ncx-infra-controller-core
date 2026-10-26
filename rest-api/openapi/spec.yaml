@@ -19992,7 +19992,7 @@ components:
       examples:
         - machineId: fm100psbtmb15tgh6q5duqb8ke5grng7ksd96hetbeie9nc5pvcca6eol80
           interfaces:
-            - logicalIfname: eth_r0_p0
+            - logicalName: eth_r0_p0
               rail: 0
               plane: 0
               configuredMaintenanceMode: false
@@ -20002,9 +20002,9 @@ components:
     MachineSpectrumXMultiplaneInterface:
       type: object
       description: Desired configuration for one declared rail/plane interface.
-      required: [logicalIfname, rail, plane, configuredMaintenanceMode, reference, revision]
+      required: [logicalName, rail, plane, configuredMaintenanceMode, reference, revision]
       properties:
-        logicalIfname:
+        logicalName:
           type: string
         rail:
           type: integer
@@ -20022,7 +20022,7 @@ components:
         revision:
           type: string
       examples:
-        - logicalIfname: eth_r0_p0
+        - logicalName: eth_r0_p0
           rail: 0
           plane: 0
           configuredMaintenanceMode: false
@@ -20044,7 +20044,7 @@ components:
       examples:
         - dpuMachineId: fm100dsasb5dsh6e6ogogslpovne4rj82rp9jlf00qd7mcvmaadv85phk3g
           interfaces:
-            - logicalIfname: eth_r0_p0
+            - logicalName: eth_r0_p0
               maintenanceMode: false
               revision: V1-T1748645613333257
               netdev: A53p0
@@ -20053,9 +20053,9 @@ components:
     MachineSpectrumXMultiplaneObservation:
       type: object
       description: The last attempted interface revision and observed state. A revision may lag the desired configuration.
-      required: [logicalIfname, maintenanceMode, revision, netdev, error, observedAt]
+      required: [logicalName, maintenanceMode, revision, netdev, error, observedAt]
       properties:
-        logicalIfname:
+        logicalName:
           type: string
         maintenanceMode:
           type: [boolean, 'null']
@@ -20070,7 +20070,7 @@ components:
           type: [string, 'null']
           format: date-time
       examples:
-        - logicalIfname: eth_r0_p0
+        - logicalName: eth_r0_p0
           maintenanceMode: false
           revision: V1-T1748645613333257
           netdev: A53p0

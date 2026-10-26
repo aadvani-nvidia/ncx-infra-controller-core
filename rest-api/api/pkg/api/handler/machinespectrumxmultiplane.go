@@ -18,19 +18,18 @@ import (
 	corev1 "github.com/NVIDIA/infra-controller/rest-api/proto/core/gen/v1"
 )
 
-type machineSpectrumXMultiplaneHandler struct {
+// GetMachineSpectrumXMultiplaneHandler retrieves configuration and independent DPU observations.
+type GetMachineSpectrumXMultiplaneHandler struct {
 	dbSession *cdb.Session
 	scp       *sc.ClientPool
 }
 
-// GetMachineSpectrumXMultiplaneHandler retrieves configuration and independent DPU observations.
-type GetMachineSpectrumXMultiplaneHandler struct {
-	machineSpectrumXMultiplaneHandler
-}
-
 // NewGetMachineSpectrumXMultiplaneHandler returns the machine multiplane read handler.
 func NewGetMachineSpectrumXMultiplaneHandler(dbSession *cdb.Session, scp *sc.ClientPool) GetMachineSpectrumXMultiplaneHandler {
-	return GetMachineSpectrumXMultiplaneHandler{machineSpectrumXMultiplaneHandler{dbSession: dbSession, scp: scp}}
+	return GetMachineSpectrumXMultiplaneHandler{
+		dbSession: dbSession,
+		scp:       scp,
+	}
 }
 
 // Handle godoc
@@ -44,53 +43,19 @@ func NewGetMachineSpectrumXMultiplaneHandler(dbSession *cdb.Session, scp *sc.Cli
 // @Success 200 {object} model.APIMachineSpectrumXMultiplane
 // @Router /v2/org/{org}/nico/machine/{machineId}/spectrumx-multiplane [get]
 func (h GetMachineSpectrumXMultiplaneHandler) Handle(c echo.Context) error {
-	return handleMachineSpectrumXMultiplane(c, h.machineSpectrumXMultiplaneHandler, false)
-}
-
-// UpdateMachineSpectrumXMultiplaneHandler patches desired maintenance configuration.
-type UpdateMachineSpectrumXMultiplaneHandler struct {
-	machineSpectrumXMultiplaneHandler
-}
-
-// NewUpdateMachineSpectrumXMultiplaneHandler returns the machine multiplane update handler.
-func NewUpdateMachineSpectrumXMultiplaneHandler(dbSession *cdb.Session, scp *sc.ClientPool) UpdateMachineSpectrumXMultiplaneHandler {
-	return UpdateMachineSpectrumXMultiplaneHandler{machineSpectrumXMultiplaneHandler{dbSession: dbSession, scp: scp}}
-}
-
-// Handle godoc
-// @Summary Update Machine Spectrum-X Multiplane
-// @Description Provider Admins may atomically change selected rails and planes, including on assigned Machines. True maintenanceMode disables the selected links. The response confirms saved configuration; DPU observations converge asynchronously.
-// @Tags machine
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param org path string true "Name of NGC organization"
-// @Param machineId path string true "ID of Machine"
-// @Param request body model.APIMachineSpectrumXMultiplaneUpdateRequest true "Maintenance selection"
-// @Success 200 {object} model.APIMachineSpectrumXMultiplane
-// @Router /v2/org/{org}/nico/machine/{machineId}/spectrumx-multiplane [patch]
-func (h UpdateMachineSpectrumXMultiplaneHandler) Handle(c echo.Context) error {
-	return handleMachineSpectrumXMultiplane(c, h.machineSpectrumXMultiplaneHandler, true)
-}
-
-func handleMachineSpectrumXMultiplane(c echo.Context, h machineSpectrumXMultiplaneHandler, update bool) error {
-	action := "Get"
-	if update {
-		action = "Update"
-	}
-	org, user, ctx, logger, span := common.SetupHandler("MachineSpectrumXMultiplane", action, c)
+	org, user, ctx, logger, span := common.SetupHandler("MachineSpectrumXMultiplane", "Get", c)
 	if span != nil {
 		defer span.End()
 	}
 	if user == nil {
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve current user", nil)
 	}
-	provider, _, apiErr := common.IsProviderOrTenant(ctx, logger, h.dbSession, org, user, !update, nil)
+	provider, _, apiErr := common.IsProviderOrTenant(ctx, logger, h.dbSession, org, user, true, nil)
 	if apiErr != nil {
 		return cutil.NewAPIErrorResponse(c, apiErr.Code, apiErr.Message, nil)
 	}
 	if provider == nil {
-		return cutil.NewAPIErrorResponse(c, http.StatusForbidden, "Machine Spectrum-X multiplane requires a Provider role", nil)
+		return cutil.NewAPIErrorResponse(c, http.StatusForbidden, "Machine Spectrum-X multiplane API operations require a Provider role", nil)
 	}
 	err := common.ValidateKnownQueryParams(c.QueryParams(), struct{}{})
 	if err != nil {
@@ -99,18 +64,6 @@ func handleMachineSpectrumXMultiplane(c echo.Context, h machineSpectrumXMultipla
 	machineID := c.Param("id")
 	if machineID == "" {
 		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, "Machine ID was not specified in URL", nil)
-	}
-	var req model.APIMachineSpectrumXMultiplaneUpdateRequest
-	if update {
-		err = c.Bind(&req)
-		if err != nil {
-			return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, "Failed to parse request data, potentially invalid structure", nil)
-		}
-		req.MachineID = machineID
-		err = req.Validate()
-		if err != nil {
-			return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, err.Error(), nil)
-		}
 	}
 	machine, err := cdbm.NewMachineDAO(h.dbSession).GetByID(ctx, nil, machineID, []string{cdbm.SiteRelationName}, false)
 	if err != nil {
@@ -138,14 +91,105 @@ func handleMachineSpectrumXMultiplane(c echo.Context, h machineSpectrumXMultipla
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workflow client for Site", nil)
 	}
 	coreResp := &corev1.MachineSpxMultiplane{}
-	if update {
-		// The multiplane contract permits Provider Admins to maintain assigned Machines.
-		apiErr = common.ExecuteCoreGRPC(ctx, stc, corev1.Forge_UpdateMachineSpxMultiplaneMaintenance_FullMethodName,
-			req.ToProto(), coreResp, machine.Site.ID.String())
-	} else {
-		apiErr = common.ExecuteCoreGRPC(ctx, stc, corev1.Forge_GetMachineSpxMultiplane_FullMethodName,
-			&corev1.MachineSpxMultiplaneRequest{MachineId: &corev1.MachineId{Id: machineID}}, coreResp, machine.Site.ID.String())
+	apiErr = common.ExecuteCoreGRPC(ctx, stc, corev1.Forge_GetMachineSpxMultiplane_FullMethodName,
+		&corev1.MachineSpxMultiplaneRequest{MachineId: &corev1.MachineId{Id: machineID}}, coreResp, machine.Site.ID.String())
+	if apiErr != nil {
+		logAPIError(logger, apiErr, "Failed to proxy Machine Spectrum-X multiplane request")
+		return cutil.NewAPIErrorResponse(c, apiErr.Code, apiErr.Message, nil)
 	}
+	var response model.APIMachineSpectrumXMultiplane
+	response.FromProto(coreResp)
+	return c.JSON(http.StatusOK, response)
+}
+
+// UpdateMachineSpectrumXMultiplaneHandler patches desired maintenance configuration.
+type UpdateMachineSpectrumXMultiplaneHandler struct {
+	dbSession *cdb.Session
+	scp       *sc.ClientPool
+}
+
+// NewUpdateMachineSpectrumXMultiplaneHandler returns the machine multiplane update handler.
+func NewUpdateMachineSpectrumXMultiplaneHandler(dbSession *cdb.Session, scp *sc.ClientPool) UpdateMachineSpectrumXMultiplaneHandler {
+	return UpdateMachineSpectrumXMultiplaneHandler{
+		dbSession: dbSession,
+		scp:       scp,
+	}
+}
+
+// Handle godoc
+// @Summary Update Machine Spectrum-X Multiplane
+// @Description Provider Admins may atomically change selected rails and planes, including on assigned Machines. True maintenanceMode disables the selected links. The response confirms saved configuration; DPU observations converge asynchronously.
+// @Tags machine
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param org path string true "Name of NGC organization"
+// @Param machineId path string true "ID of Machine"
+// @Param request body model.APIMachineSpectrumXMultiplaneUpdateRequest true "Maintenance selection"
+// @Success 200 {object} model.APIMachineSpectrumXMultiplane
+// @Router /v2/org/{org}/nico/machine/{machineId}/spectrumx-multiplane [patch]
+func (h UpdateMachineSpectrumXMultiplaneHandler) Handle(c echo.Context) error {
+	org, user, ctx, logger, span := common.SetupHandler("MachineSpectrumXMultiplane", "Update", c)
+	if span != nil {
+		defer span.End()
+	}
+	if user == nil {
+		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve current user", nil)
+	}
+	provider, _, apiErr := common.IsProviderOrTenant(ctx, logger, h.dbSession, org, user, false, nil)
+	if apiErr != nil {
+		return cutil.NewAPIErrorResponse(c, apiErr.Code, apiErr.Message, nil)
+	}
+	if provider == nil {
+		return cutil.NewAPIErrorResponse(c, http.StatusForbidden, "Machine Spectrum-X multiplane API operations require a Provider role", nil)
+	}
+	err := common.ValidateKnownQueryParams(c.QueryParams(), struct{}{})
+	if err != nil {
+		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, err.Error(), nil)
+	}
+	machineID := c.Param("id")
+	if machineID == "" {
+		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, "Machine ID was not specified in URL", nil)
+	}
+	var req model.APIMachineSpectrumXMultiplaneUpdateRequest
+	err = c.Bind(&req)
+	if err != nil {
+		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, "Failed to parse request data, potentially invalid structure", nil)
+	}
+	req.MachineID = machineID
+	err = req.Validate()
+	if err != nil {
+		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, err.Error(), nil)
+	}
+	machine, err := cdbm.NewMachineDAO(h.dbSession).GetByID(ctx, nil, machineID, []string{cdbm.SiteRelationName}, false)
+	if err != nil {
+		if errors.Is(err, cdb.ErrDoesNotExist) {
+			return cutil.NewAPIErrorResponse(c, http.StatusNotFound, "Could not find Machine with specified ID", nil)
+		}
+		logger.Error().Err(err).Msg("Failed to retrieve Machine for Spectrum-X multiplane")
+		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Machine details, DB error", nil)
+	}
+	if machine.InfrastructureProviderID != provider.ID {
+		return cutil.NewAPIErrorResponse(c, http.StatusNotFound, "Could not find Machine with specified ID", nil)
+	}
+	if machine.IsMissingOnSite {
+		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, "Machine is missing on site", nil)
+	}
+	if machine.Site == nil {
+		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Site details for Machine, DB error", nil)
+	}
+	if machine.Site.Status != cdbm.SiteStatusRegistered {
+		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, "Site is not in Registered state", nil)
+	}
+	stc, err := h.scp.GetClientByID(machine.Site.ID)
+	if err != nil {
+		logger.Error().Err(err).Msg("Failed to retrieve workflow client for Machine site")
+		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workflow client for Site", nil)
+	}
+	coreResp := &corev1.MachineSpxMultiplane{}
+	// The multiplane contract permits Provider Admins to maintain assigned Machines.
+	apiErr = common.ExecuteCoreGRPC(ctx, stc, corev1.Forge_UpdateMachineSpxMultiplaneMaintenance_FullMethodName,
+		req.ToProto(), coreResp, machine.Site.ID.String())
 	if apiErr != nil {
 		logAPIError(logger, apiErr, "Failed to proxy Machine Spectrum-X multiplane request")
 		return cutil.NewAPIErrorResponse(c, apiErr.Code, apiErr.Message, nil)

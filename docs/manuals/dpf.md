@@ -1493,8 +1493,8 @@ To disable it, add the following key to the existing East West Ethernet section:
 partial-multiplane = "disabled"
 ```
 
-Accepted values are `enabled` and `disabled`. This setting is read at startup.
-When disabled, maintenance configuration is no longer delivered to agents. Saved configuration
+Accepted values are `enabled` and `disabled`. Core reads this setting at startup.
+When disabled, Core rejects `spx-maintenance` CLI and REST requests and stops delivering maintenance configuration. Saved configuration
 and per-DPU observations remain in the machine database, but observations become stale while
 reporting is disabled. Re-enabling resumes delivery of saved requests and refreshes observations
 on subsequent reports.
@@ -1506,7 +1506,7 @@ disabling the feature.
 If the DPU is reingested or reprovisioned with the feature disabled, maintenance initialization
 is skipped and all planes start in their default enabled state.
 
-The NICo partial-multiplane site config setting is also used to derive the agent internal Helm value `xplaneMaintenance.enabled` automatically.
+For deployments that include the `doca_xplane` service, NICO derives the DPU agent Helm value `xplaneMaintenance.enabled` from this setting. The derived value overrides any `xplaneMaintenance` entry in the DPU agent `extra_helm_values`.
 
 ## 4. Start carbide-api to create the DPF initialization objects
 

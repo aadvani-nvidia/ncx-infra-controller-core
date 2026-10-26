@@ -20,18 +20,19 @@ type APISpectrumXMultiplaneRange struct {
 }
 
 // APIMachineSpectrumXMultiplaneUpdateRequest changes the Cartesian product of
-// exactly one rail selector and one plane selector. True disables the links.
+// exactly one rail selector and one plane selector.
+// MaintenanceMode=true disables the selected links; false enables them.
 type APIMachineSpectrumXMultiplaneUpdateRequest struct {
 	MachineID       string                       `json:"-"`
-	Rail            *int                         `json:"rail,omitempty"`
-	AllRails        *bool                        `json:"allRails,omitempty"`
-	RailRange       *APISpectrumXMultiplaneRange `json:"railRange,omitempty"`
-	Plane           *int                         `json:"plane,omitempty"`
-	AllPlanes       *bool                        `json:"allPlanes,omitempty"`
-	PlaneRange      *APISpectrumXMultiplaneRange `json:"planeRange,omitempty"`
+	Rail            *int                         `json:"rail"`
+	AllRails        *bool                        `json:"allRails"`
+	RailRange       *APISpectrumXMultiplaneRange `json:"railRange"`
+	Plane           *int                         `json:"plane"`
+	AllPlanes       *bool                        `json:"allPlanes"`
+	PlaneRange      *APISpectrumXMultiplaneRange `json:"planeRange"`
 	MaintenanceMode *bool                        `json:"maintenanceMode"`
 	// Reference omission or null preserves the reference; an empty string clears it.
-	Reference *string `json:"reference,omitempty"`
+	Reference *string `json:"reference"`
 }
 
 // Validate rejects missing, ambiguous, or out-of-bounds selections before proxying.
@@ -121,7 +122,7 @@ type APIMachineSpectrumXMultiplane struct {
 
 // APIMachineSpectrumXMultiplaneInterface is one declared rail/plane's desired configuration.
 type APIMachineSpectrumXMultiplaneInterface struct {
-	LogicalIfname             string  `json:"logicalIfname"`
+	LogicalName               string  `json:"logicalName"`
 	Rail                      uint32  `json:"rail"`
 	Plane                     uint32  `json:"plane"`
 	ConfiguredMaintenanceMode *bool   `json:"configuredMaintenanceMode"`
@@ -137,7 +138,7 @@ type APIMachineSpectrumXMultiplaneDPUStatus struct {
 
 // APIMachineSpectrumXMultiplaneObservation describes an attempt, which may precede the desired revision.
 type APIMachineSpectrumXMultiplaneObservation struct {
-	LogicalIfname   string  `json:"logicalIfname"`
+	LogicalName     string  `json:"logicalName"`
 	MaintenanceMode *bool   `json:"maintenanceMode"`
 	Revision        string  `json:"revision"`
 	Netdev          *string `json:"netdev"`
@@ -168,7 +169,7 @@ func (m *APIMachineSpectrumXMultiplaneInterface) FromProto(in *corev1.MachineSpx
 	if in == nil {
 		return
 	}
-	m.LogicalIfname, m.Rail, m.Plane = in.GetLogicalIfname(), in.GetRail(), in.GetPlane()
+	m.LogicalName, m.Rail, m.Plane = in.GetLogicalIfname(), in.GetRail(), in.GetPlane()
 	m.ConfiguredMaintenanceMode, m.Reference, m.Revision = in.CfgMaintenanceMode, in.Reference, in.GetRevision()
 }
 
@@ -189,7 +190,7 @@ func (m *APIMachineSpectrumXMultiplaneObservation) FromProto(in *corev1.AstraMul
 	if in == nil {
 		return
 	}
-	m.LogicalIfname, m.Revision = in.GetLogicalIfname(), in.GetRevision()
+	m.LogicalName, m.Revision = in.GetLogicalIfname(), in.GetRevision()
 	m.MaintenanceMode, m.Netdev, m.Error = in.MaintenanceMode, in.Netdev, in.Error
 	m.ObservedAt = cutil.ProtoTimePtrToStrPtr(in.GetObservedAt())
 }

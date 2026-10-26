@@ -25,7 +25,7 @@ var _ MappedNullable = &MachineSpectrumXMultiplaneObservation{}
 
 // MachineSpectrumXMultiplaneObservation The last attempted interface revision and observed state. A revision may lag the desired configuration.
 type MachineSpectrumXMultiplaneObservation struct {
-	LogicalIfname string `json:"logicalIfname"`
+	LogicalName string `json:"logicalName"`
 	// Null when readback is unavailable; false means maintenance is off.
 	MaintenanceMode NullableBool   `json:"maintenanceMode"`
 	Revision        string         `json:"revision"`
@@ -40,9 +40,9 @@ type _MachineSpectrumXMultiplaneObservation MachineSpectrumXMultiplaneObservatio
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewMachineSpectrumXMultiplaneObservation(logicalIfname string, maintenanceMode NullableBool, revision string, netdev NullableString, error_ NullableString, observedAt NullableTime) *MachineSpectrumXMultiplaneObservation {
+func NewMachineSpectrumXMultiplaneObservation(logicalName string, maintenanceMode NullableBool, revision string, netdev NullableString, error_ NullableString, observedAt NullableTime) *MachineSpectrumXMultiplaneObservation {
 	this := MachineSpectrumXMultiplaneObservation{}
-	this.LogicalIfname = logicalIfname
+	this.LogicalName = logicalName
 	this.MaintenanceMode = maintenanceMode
 	this.Revision = revision
 	this.Netdev = netdev
@@ -59,28 +59,28 @@ func NewMachineSpectrumXMultiplaneObservationWithDefaults() *MachineSpectrumXMul
 	return &this
 }
 
-// GetLogicalIfname returns the LogicalIfname field value
-func (o *MachineSpectrumXMultiplaneObservation) GetLogicalIfname() string {
+// GetLogicalName returns the LogicalName field value
+func (o *MachineSpectrumXMultiplaneObservation) GetLogicalName() string {
 	if o == nil {
 		var ret string
 		return ret
 	}
 
-	return o.LogicalIfname
+	return o.LogicalName
 }
 
-// GetLogicalIfnameOk returns a tuple with the LogicalIfname field value
+// GetLogicalNameOk returns a tuple with the LogicalName field value
 // and a boolean to check if the value has been set.
-func (o *MachineSpectrumXMultiplaneObservation) GetLogicalIfnameOk() (*string, bool) {
+func (o *MachineSpectrumXMultiplaneObservation) GetLogicalNameOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return &o.LogicalIfname, true
+	return &o.LogicalName, true
 }
 
-// SetLogicalIfname sets field value
-func (o *MachineSpectrumXMultiplaneObservation) SetLogicalIfname(v string) {
-	o.LogicalIfname = v
+// SetLogicalName sets field value
+func (o *MachineSpectrumXMultiplaneObservation) SetLogicalName(v string) {
+	o.LogicalName = v
 }
 
 // GetMaintenanceMode returns the MaintenanceMode field value
@@ -221,7 +221,7 @@ func (o MachineSpectrumXMultiplaneObservation) MarshalJSON() ([]byte, error) {
 
 func (o MachineSpectrumXMultiplaneObservation) ToMap() (map[string]interface{}, error) {
 	toSerialize := map[string]interface{}{}
-	toSerialize["logicalIfname"] = o.LogicalIfname
+	toSerialize["logicalName"] = o.LogicalName
 	toSerialize["maintenanceMode"] = o.MaintenanceMode.Get()
 	toSerialize["revision"] = o.Revision
 	toSerialize["netdev"] = o.Netdev.Get()
@@ -235,7 +235,7 @@ func (o *MachineSpectrumXMultiplaneObservation) UnmarshalJSON(data []byte) (err 
 	// by unmarshalling the object into a generic map with string keys and checking
 	// that every required field exists as a key in the generic map.
 	requiredProperties := []string{
-		"logicalIfname",
+		"logicalName",
 		"maintenanceMode",
 		"revision",
 		"netdev",

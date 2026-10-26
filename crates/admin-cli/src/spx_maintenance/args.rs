@@ -27,8 +27,8 @@ use clap::{Parser, ValueEnum};
     long_about = "Configure maintenance mode for Spectrum-X planes on a machine. Each rail has \
         two SuperNICs: planes 0-3 belong to one, and planes 4-7 belong to the other. \
         Select a single value, an inclusive ascending START-END range, or all for each rail and plane selector. \
-        A single-plane selection leaves the other planes unchanged. The DPU flavor initializes \
-        planes in maintenance mode. Until a CLI request is made, the agent observes without changing that state. Maintenance mode on disables a plane; maintenance mode off enables it.",
+        A single-plane selection leaves the other planes unchanged. When partial-multiplane is enabled, the DPU flavor initializes \
+        planes in maintenance mode. Until you send a CLI or REST request, the agent observes that state without changing it. Maintenance mode on disables a plane; maintenance mode off enables it.",
     after_long_help = "\
 EXAMPLES:
 
@@ -107,32 +107,32 @@ Disable maintenance mode on all planes on all rails:
         rail_keyword: RailKeyword,
         #[arg(
             value_name = "0-3|START-END|all",
-            help = "Rail number (0-3), inclusive ascending range (e.g. 0-2), or all four rails"
+            help = "Rail number (0-3), inclusive ascending range (for example, 0-2), or all four rails"
         )]
         rail: RailSelector,
         #[arg(value_enum, value_name = "plane", help = "The literal keyword plane")]
         plane_keyword: PlaneKeyword,
         #[arg(
             value_name = "0-7|START-END|all",
-            help = "Plane number (0-7), inclusive ascending range (e.g. 1-4), or all eight planes on each selected rail"
+            help = "Plane number (0-7), inclusive ascending range (for example, 1-4), or all eight planes on each selected rail"
         )]
         plane: PlaneSelector,
         #[arg(
             value_enum,
             value_name = "on|off",
-            help = "maintenance mode on disables the plane; maintenance mode off enables it"
+            help = "Maintenance mode on disables the plane; maintenance mode off enables it"
         )]
         mode: MaintenanceMode,
         #[arg(
             long,
             value_name = "REFERENCE",
-            help = "Optional reference or reason for the change"
+            help = "Omit to preserve the saved reference; pass a value to replace it or an empty string to clear it"
         )]
         reference: Option<String>,
     },
     #[command(
-        about = "Show host maintenance configuration and each DPU's status",
-        long_about = "Show host maintenance configuration and each DPU's status. The Config updated at (UTC) column shows the last configuration change timestamp encoded in the desired revision. Unset maintenance modes show a dash because their revision only records initialization.",
+        about = "Show host maintenance configuration and the status of each DPU",
+        long_about = "Show host maintenance configuration and the status of each DPU. The Config updated at (UTC) column shows the last configuration change timestamp encoded in the desired revision. Unset maintenance modes show a dash because their revision only records initialization.",
         override_usage = "nico-admin-cli spx-maintenance --machine-id <MACHINE_ID> show",
         after_long_help = "\
 EXAMPLES:
