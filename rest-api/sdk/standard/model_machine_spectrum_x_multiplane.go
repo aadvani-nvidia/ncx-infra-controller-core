@@ -22,12 +22,13 @@ import (
 // checks if the MachineSpectrumXMultiplane type satisfies the MappedNullable interface at compile time
 var _ MappedNullable = &MachineSpectrumXMultiplane{}
 
-// MachineSpectrumXMultiplane Desired host configuration and independent observations for associated BF4 DPUs. There is no aggregate host readback.
+// MachineSpectrumXMultiplane Desired host configuration and independent observations for associated BlueField-4 DPUs. There is no aggregate host readback.
 type MachineSpectrumXMultiplane struct {
+	// ID of the Machine whose maintenance configuration and DPU observations are returned.
 	MachineId string `json:"machineId"`
 	// Declared interfaces ordered by rail and plane.
 	Interfaces []MachineSpectrumXMultiplaneInterface `json:"interfaces"`
-	// One entry per associated BF4 DPU, ordered by DPU ID. Empty when none are present.
+	// One entry per associated BlueField-4 DPU, ordered by DPU ID. Empty when none are present.
 	DpuStatuses []MachineSpectrumXMultiplaneDPUStatus `json:"dpuStatuses"`
 }
 

@@ -34,7 +34,7 @@ func NewGetMachineSpectrumXMultiplaneHandler(dbSession *cdb.Session, scp *sc.Cli
 
 // Handle godoc
 // @Summary Get Machine Spectrum-X Multiplane
-// @Description Retrieve desired rail/plane maintenance configuration and separate observations for each BF4 DPU. Provider Admins and Provider Viewers may read it.
+// @Description Retrieve desired rail/plane maintenance configuration and separate observations for each BlueField-4 DPU. For Infrastructure Providers: Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` or `PROVIDER_VIEWER` suffix.
 // @Tags machine
 // @Produce json
 // @Security ApiKeyAuth
@@ -118,7 +118,7 @@ func NewUpdateMachineSpectrumXMultiplaneHandler(dbSession *cdb.Session, scp *sc.
 
 // Handle godoc
 // @Summary Update Machine Spectrum-X Multiplane
-// @Description Provider Admins may atomically change selected rails and planes, including on assigned Machines. True maintenanceMode disables the selected links. The response confirms saved configuration; DPU observations converge asynchronously.
+// @Description Atomically change selected rails and planes. Assigned Machines require acknowledgeAttachedInstance=true. True maintenanceMode disables the selected links. The response confirms saved configuration; DPU observations converge asynchronously. For Infrastructure Providers: Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
 // @Tags machine
 // @Accept json
 // @Produce json
@@ -175,6 +175,10 @@ func (h UpdateMachineSpectrumXMultiplaneHandler) Handle(c echo.Context) error {
 	if machine.IsMissingOnSite {
 		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, "Machine is missing on site", nil)
 	}
+	if machine.IsAssigned && (req.AcknowledgeAttachedInstance == nil || !*req.AcknowledgeAttachedInstance) {
+		logger.Error().Msg("Machine is currently in use by an Instance and cannot update Spectrum-X multiplane maintenance without acknowledging the attached Instance")
+		return cutil.NewAPIErrorResponse(c, http.StatusBadRequest, "Machine is currently in use by an Instance, set acknowledgeAttachedInstance to true to proceed", nil)
+	}
 	if machine.Site == nil {
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve Site details for Machine, DB error", nil)
 	}
@@ -187,7 +191,6 @@ func (h UpdateMachineSpectrumXMultiplaneHandler) Handle(c echo.Context) error {
 		return cutil.NewAPIErrorResponse(c, http.StatusInternalServerError, "Failed to retrieve workflow client for Site", nil)
 	}
 	coreResp := &corev1.MachineSpxMultiplane{}
-	// The multiplane contract permits Provider Admins to maintain assigned Machines.
 	apiErr = common.ExecuteCoreGRPC(ctx, stc, corev1.Forge_UpdateMachineSpxMultiplaneMaintenance_FullMethodName,
 		req.ToProto(), coreResp, machine.Site.ID.String())
 	if apiErr != nil {

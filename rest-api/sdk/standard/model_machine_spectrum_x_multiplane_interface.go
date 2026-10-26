@@ -24,13 +24,18 @@ var _ MappedNullable = &MachineSpectrumXMultiplaneInterface{}
 
 // MachineSpectrumXMultiplaneInterface Desired configuration for one declared rail/plane interface.
 type MachineSpectrumXMultiplaneInterface struct {
+	// Logical interface name in the form eth_r<rail>_p<plane>, identifying the declared rail and plane.
 	LogicalName string `json:"logicalName"`
-	Rail        int32  `json:"rail"`
-	Plane       int32  `json:"plane"`
+	// Rail number of this interface, from 0 through 3.
+	Rail int32 `json:"rail"`
+	// Plane number of this interface, from 0 through 7.
+	Plane int32 `json:"plane"`
 	// Null until an operator requests a mode. True disables links; false enables them.
-	ConfiguredMaintenanceMode NullableBool   `json:"configuredMaintenanceMode"`
-	Reference                 NullableString `json:"reference"`
-	Revision                  string         `json:"revision"`
+	ConfiguredMaintenanceMode NullableBool `json:"configuredMaintenanceMode"`
+	// Reference recorded with the maintenance configuration, such as a ticket URL. Null if no reference is stored.
+	Reference NullableString `json:"reference"`
+	// Version of this interface's desired maintenance configuration. Compare it with each DPU observation's revision to determine whether the observation describes the current request.
+	Revision string `json:"revision"`
 }
 
 type _MachineSpectrumXMultiplaneInterface MachineSpectrumXMultiplaneInterface

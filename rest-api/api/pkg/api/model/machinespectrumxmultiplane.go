@@ -15,24 +15,38 @@ import (
 
 // APISpectrumXMultiplaneRange selects inclusive, ascending rail or plane bounds.
 type APISpectrumXMultiplaneRange struct {
+	// Start is the first value of the range, inclusive
 	Start *int `json:"start"`
-	End   *int `json:"end"`
+	// End is the last value of the range, inclusive. It must be greater than or equal to Start.
+	End *int `json:"end"`
 }
 
 // APIMachineSpectrumXMultiplaneUpdateRequest changes the Cartesian product of
 // exactly one rail selector and one plane selector.
 // MaintenanceMode=true disables the selected links; false enables them.
 type APIMachineSpectrumXMultiplaneUpdateRequest struct {
-	MachineID       string                       `json:"-"`
-	Rail            *int                         `json:"rail"`
-	AllRails        *bool                        `json:"allRails"`
-	RailRange       *APISpectrumXMultiplaneRange `json:"railRange"`
-	Plane           *int                         `json:"plane"`
-	AllPlanes       *bool                        `json:"allPlanes"`
-	PlaneRange      *APISpectrumXMultiplaneRange `json:"planeRange"`
-	MaintenanceMode *bool                        `json:"maintenanceMode"`
-	// Reference omission or null preserves the reference; an empty string clears it.
+	// MachineID is the ID of the Machine whose planes are updated. It comes from the request path, not the body.
+	MachineID string `json:"-"`
+	// Rail selects a single rail (0-3). Exactly one of Rail, AllRails, or RailRange is required.
+	Rail *int `json:"rail"`
+	// AllRails selects every rail when true. If present, it must be true.
+	AllRails *bool `json:"allRails"`
+	// RailRange selects an inclusive range of rails, each between 0 and 3
+	RailRange *APISpectrumXMultiplaneRange `json:"railRange"`
+	// Plane selects a single plane (0-7). Exactly one of Plane, AllPlanes, or PlaneRange is required.
+	Plane *int `json:"plane"`
+	// AllPlanes selects every plane when true. If present, it must be true.
+	AllPlanes *bool `json:"allPlanes"`
+	// PlaneRange selects an inclusive range of planes, each between 0 and 7
+	PlaneRange *APISpectrumXMultiplaneRange `json:"planeRange"`
+	// MaintenanceMode is required. True puts the selected planes in maintenance mode (disabled), false takes them out of it (enabled).
+	MaintenanceMode *bool `json:"maintenanceMode"`
+	// Reference is an optional reference for the change, such as a ticket URL.
+	// Omission or null preserves the stored reference; an empty string clears it.
 	Reference *string `json:"reference"`
+	// AcknowledgeAttachedInstance must be true when an Instance is attached to the Machine.
+	// Maintenance changes may disrupt the Instance's Tenant workload.
+	AcknowledgeAttachedInstance *bool `json:"acknowledgeAttachedInstance"`
 }
 
 // Validate rejects missing, ambiguous, or out-of-bounds selections before proxying.
@@ -115,35 +129,54 @@ func (r APISpectrumXMultiplaneRange) ToProto() *corev1.SpxMultiplaneRange {
 
 // APIMachineSpectrumXMultiplane contains desired host configuration and separate DPU observations.
 type APIMachineSpectrumXMultiplane struct {
-	MachineID   string                                   `json:"machineId"`
-	Interfaces  []APIMachineSpectrumXMultiplaneInterface `json:"interfaces"`
+	// MachineID is the ID of the Machine
+	MachineID string `json:"machineId"`
+	// Interfaces is the desired configuration of each declared rail/plane interface of the Machine
+	Interfaces []APIMachineSpectrumXMultiplaneInterface `json:"interfaces"`
+	// DPUStatuses is the observed state reported by each associated BlueField-4 DPU
 	DPUStatuses []APIMachineSpectrumXMultiplaneDPUStatus `json:"dpuStatuses"`
 }
 
 // APIMachineSpectrumXMultiplaneInterface is one declared rail/plane's desired configuration.
 type APIMachineSpectrumXMultiplaneInterface struct {
-	LogicalName               string  `json:"logicalName"`
-	Rail                      uint32  `json:"rail"`
-	Plane                     uint32  `json:"plane"`
-	ConfiguredMaintenanceMode *bool   `json:"configuredMaintenanceMode"`
-	Reference                 *string `json:"reference"`
-	Revision                  string  `json:"revision"`
+	// LogicalName is the logical name of the interface, in the form eth_r<rail>_p<plane>
+	LogicalName string `json:"logicalName"`
+	// Rail is the rail number of the interface (0-3)
+	Rail uint32 `json:"rail"`
+	// Plane is the plane number of the interface (0-7)
+	Plane uint32 `json:"plane"`
+	// ConfiguredMaintenanceMode is the requested mode: true for maintenance mode (disabled), false for enabled.
+	// Null means no mode has been requested, so the DPU observes the plane without changing its state.
+	ConfiguredMaintenanceMode *bool `json:"configuredMaintenanceMode"`
+	// Reference is the reference, such as a ticket URL, recorded with the last change. Null if none was recorded.
+	Reference *string `json:"reference"`
+	// Revision identifies the version of this interface's configuration
+	Revision string `json:"revision"`
 }
 
-// APIMachineSpectrumXMultiplaneDPUStatus keeps readback separate for each associated BF4 DPU.
+// APIMachineSpectrumXMultiplaneDPUStatus keeps readback separate for each associated BlueField-4 DPU.
 type APIMachineSpectrumXMultiplaneDPUStatus struct {
-	DPUMachineID string                                     `json:"dpuMachineId"`
-	Interfaces   []APIMachineSpectrumXMultiplaneObservation `json:"interfaces"`
+	// DPUMachineID is the ID of the BlueField-4 DPU that reported these observations
+	DPUMachineID string `json:"dpuMachineId"`
+	// Interfaces is the DPU's observation of each interface
+	Interfaces []APIMachineSpectrumXMultiplaneObservation `json:"interfaces"`
 }
 
 // APIMachineSpectrumXMultiplaneObservation describes an attempt, which may precede the desired revision.
 type APIMachineSpectrumXMultiplaneObservation struct {
-	LogicalName     string  `json:"logicalName"`
-	MaintenanceMode *bool   `json:"maintenanceMode"`
-	Revision        string  `json:"revision"`
-	Netdev          *string `json:"netdev"`
-	Error           *string `json:"error"`
-	ObservedAt      *string `json:"observedAt"`
+	// LogicalName is the logical name of the interface, in the form eth_r<rail>_p<plane>
+	LogicalName string `json:"logicalName"`
+	// MaintenanceMode is the mode the DPU observed on the plane: true for maintenance mode, false for enabled.
+	// Null if the DPU has not reported a mode.
+	MaintenanceMode *bool `json:"maintenanceMode"`
+	// Revision is the configuration revision of the DPU's attempt, which may be older than the desired revision
+	Revision string `json:"revision"`
+	// Netdev is the network device name the DPU resolved for the interface. Null if none was resolved.
+	Netdev *string `json:"netdev"`
+	// Error describes why the DPU could not apply or observe the interface. Null if there was no error.
+	Error *string `json:"error"`
+	// Observed is when the DPU made the observation. Null if it has not reported.
+	Observed *string `json:"observed"`
 }
 
 // FromProto copies the authoritative response, retaining null values and empty arrays.
@@ -192,5 +225,5 @@ func (m *APIMachineSpectrumXMultiplaneObservation) FromProto(in *corev1.AstraMul
 	}
 	m.LogicalName, m.Revision = in.GetLogicalIfname(), in.GetRevision()
 	m.MaintenanceMode, m.Netdev, m.Error = in.MaintenanceMode, in.Netdev, in.Error
-	m.ObservedAt = cutil.ProtoTimePtrToStrPtr(in.GetObservedAt())
+	m.Observed = cutil.ProtoTimePtrToStrPtr(in.GetObservedAt())
 }

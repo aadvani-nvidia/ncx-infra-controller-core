@@ -24,8 +24,10 @@ var _ MappedNullable = &SpectrumXMultiplaneRange{}
 
 // SpectrumXMultiplaneRange Inclusive ascending bounds. Rail bounds are 0 through 3; plane bounds are 0 through 7.
 type SpectrumXMultiplaneRange struct {
+	// First value in the inclusive range.
 	Start int32 `json:"start"`
-	End   int32 `json:"end"`
+	// Last value in the inclusive range. Must be greater than or equal to start.
+	End int32 `json:"end"`
 }
 
 type _SpectrumXMultiplaneRange SpectrumXMultiplaneRange

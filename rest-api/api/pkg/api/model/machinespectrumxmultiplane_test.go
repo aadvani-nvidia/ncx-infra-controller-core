@@ -83,7 +83,7 @@ func TestAPIMachineSpectrumXMultiplane_FromProto(t *testing.T) {
 	assert.Contains(t, string(data), `"configuredMaintenanceMode":null`)
 	assert.Contains(t, string(data), `"maintenanceMode":false`)
 	assert.Contains(t, string(data), `"maintenanceMode":null`)
-	assert.Contains(t, string(data), `"observedAt":null`)
+	assert.Contains(t, string(data), `"observed":null`)
 	response.FromProto(&corev1.MachineSpxMultiplane{MachineId: &corev1.MachineId{Id: "machine"}})
 	data, err = json.Marshal(response)
 	require.NoError(t, err)

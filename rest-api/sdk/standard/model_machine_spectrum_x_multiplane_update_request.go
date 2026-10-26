@@ -24,16 +24,24 @@ var _ MappedNullable = &MachineSpectrumXMultiplaneUpdateRequest{}
 
 // MachineSpectrumXMultiplaneUpdateRequest struct for MachineSpectrumXMultiplaneUpdateRequest
 type MachineSpectrumXMultiplaneUpdateRequest struct {
-	Rail       *int32                    `json:"rail,omitempty"`
-	AllRails   *bool                     `json:"allRails,omitempty"`
-	RailRange  *SpectrumXMultiplaneRange `json:"railRange,omitempty"`
-	Plane      *int32                    `json:"plane,omitempty"`
-	AllPlanes  *bool                     `json:"allPlanes,omitempty"`
+	// Single rail to update, from 0 through 3. Supply exactly one of rail, allRails, or railRange.
+	Rail *int32 `json:"rail,omitempty"`
+	// Select all four rails. If supplied, must be true. Supply exactly one of rail, allRails, or railRange.
+	AllRails *bool `json:"allRails,omitempty"`
+	// Inclusive ascending range of rails to update. Both endpoints must be from 0 through 3. Supply exactly one of rail, allRails, or railRange.
+	RailRange *SpectrumXMultiplaneRange `json:"railRange,omitempty"`
+	// Single plane to update on each selected rail, from 0 through 7. Supply exactly one of plane, allPlanes, or planeRange.
+	Plane *int32 `json:"plane,omitempty"`
+	// Select all eight planes on each selected rail. If supplied, must be true. Supply exactly one of plane, allPlanes, or planeRange.
+	AllPlanes *bool `json:"allPlanes,omitempty"`
+	// Inclusive ascending range of planes to update on each selected rail. Both endpoints must be from 0 through 7. Supply exactly one of plane, allPlanes, or planeRange.
 	PlaneRange *SpectrumXMultiplaneRange `json:"planeRange,omitempty"`
 	// True disables the selected links; false enables them.
 	MaintenanceMode bool `json:"maintenanceMode"`
 	// Omit or send null to preserve it; send an empty string to clear it.
 	Reference NullableString `json:"reference,omitempty"`
+	// Must be true when an Instance is attached to the Machine. Acknowledges that maintenance changes may disrupt the Instance's Tenant workload.
+	AcknowledgeAttachedInstance *bool `json:"acknowledgeAttachedInstance,omitempty"`
 }
 
 type _MachineSpectrumXMultiplaneUpdateRequest MachineSpectrumXMultiplaneUpdateRequest
@@ -315,6 +323,38 @@ func (o *MachineSpectrumXMultiplaneUpdateRequest) UnsetReference() {
 	o.Reference.Unset()
 }
 
+// GetAcknowledgeAttachedInstance returns the AcknowledgeAttachedInstance field value if set, zero value otherwise.
+func (o *MachineSpectrumXMultiplaneUpdateRequest) GetAcknowledgeAttachedInstance() bool {
+	if o == nil || IsNil(o.AcknowledgeAttachedInstance) {
+		var ret bool
+		return ret
+	}
+	return *o.AcknowledgeAttachedInstance
+}
+
+// GetAcknowledgeAttachedInstanceOk returns a tuple with the AcknowledgeAttachedInstance field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *MachineSpectrumXMultiplaneUpdateRequest) GetAcknowledgeAttachedInstanceOk() (*bool, bool) {
+	if o == nil || IsNil(o.AcknowledgeAttachedInstance) {
+		return nil, false
+	}
+	return o.AcknowledgeAttachedInstance, true
+}
+
+// HasAcknowledgeAttachedInstance returns a boolean if a field has been set.
+func (o *MachineSpectrumXMultiplaneUpdateRequest) HasAcknowledgeAttachedInstance() bool {
+	if o != nil && !IsNil(o.AcknowledgeAttachedInstance) {
+		return true
+	}
+
+	return false
+}
+
+// SetAcknowledgeAttachedInstance gets a reference to the given bool and assigns it to the AcknowledgeAttachedInstance field.
+func (o *MachineSpectrumXMultiplaneUpdateRequest) SetAcknowledgeAttachedInstance(v bool) {
+	o.AcknowledgeAttachedInstance = &v
+}
+
 func (o MachineSpectrumXMultiplaneUpdateRequest) MarshalJSON() ([]byte, error) {
 	toSerialize, err := o.ToMap()
 	if err != nil {
@@ -346,6 +386,9 @@ func (o MachineSpectrumXMultiplaneUpdateRequest) ToMap() (map[string]interface{}
 	toSerialize["maintenanceMode"] = o.MaintenanceMode
 	if o.Reference.IsSet() {
 		toSerialize["reference"] = o.Reference.Get()
+	}
+	if !IsNil(o.AcknowledgeAttachedInstance) {
+		toSerialize["acknowledgeAttachedInstance"] = o.AcknowledgeAttachedInstance
 	}
 	return toSerialize, nil
 }

@@ -2763,9 +2763,9 @@ func (r ApiGetMachineSpectrumxMultiplaneRequest) Execute() (*MachineSpectrumXMul
 /*
 GetMachineSpectrumxMultiplane Retrieve Machine Spectrum-X multiplane status
 
-Retrieve declared rail/plane configuration and separate observations for every associated BF4 DPU.
+Retrieve declared rail/plane configuration and separate observations for every associated BlueField-4 DPU.
 An unconfigured maintenance mode or unavailable readback is null, distinct from false.
-Requires the owning Infrastructure Provider's PROVIDER_ADMIN or PROVIDER_VIEWER role.
+For Infrastructure Providers: Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` or `PROVIDER_VIEWER` suffix.
 Partial-multiplane must be enabled in NICo site config.
 
 	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
@@ -4080,7 +4080,10 @@ an undeclared selection rejects the complete update. Unselected interfaces are u
 maintenanceMode true disables links; false enables them. An omitted or null reference preserves
 the saved reference; an empty string clears it.
 
-Requires the owning Infrastructure Provider's PROVIDER_ADMIN role. Assigned Machines are allowed.
+For Infrastructure Providers: Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
+
+When an Instance is attached
+to the Machine, `acknowledgeAttachedInstance` must be `true`; otherwise the request returns HTTP 400.
 Partial-multiplane must be enabled in NICo site config. A 200 response confirms saved desired
 configuration, not hardware completion. Read this resource until every relevant DPU observation
 has the desired interface revision, no error, and the requested maintenance mode. Readbacks

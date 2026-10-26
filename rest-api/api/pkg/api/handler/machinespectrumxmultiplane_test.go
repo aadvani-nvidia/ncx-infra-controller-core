@@ -74,16 +74,20 @@ func TestGetMachineSpectrumXMultiplaneHandler_Handle(t *testing.T) {
 }
 
 func TestUpdateMachineSpectrumXMultiplaneHandler_Handle(t *testing.T) {
+	assignedMachine := func(t *testing.T, f *common.TestSetupProviderMachineHandlerFixture) {
+		_, err := cdbm.NewMachineDAO(f.DBSession).Update(context.Background(), nil, cdbm.MachineUpdateInput{MachineID: f.MachineID, IsAssigned: cutil.GetPtr(true)})
+		require.NoError(t, err)
+	}
 	for _, tc := range []struct {
 		name  string
 		setup func(*testing.T, *common.TestSetupProviderMachineHandlerFixture)
 		body  string
 		code  int
 	}{
-		{"assigned machine with inclusive ranges", func(t *testing.T, f *common.TestSetupProviderMachineHandlerFixture) {
-			_, err := cdbm.NewMachineDAO(f.DBSession).Update(context.Background(), nil, cdbm.MachineUpdateInput{MachineID: f.MachineID, IsAssigned: cutil.GetPtr(true)})
-			require.NoError(t, err)
-		}, "", http.StatusOK},
+		{"unassigned machine", nil, "", http.StatusOK},
+		{"assigned machine without acknowledgment", assignedMachine, "", http.StatusBadRequest},
+		{"assigned machine with false acknowledgment", assignedMachine, `{"rail":0,"plane":0,"maintenanceMode":true,"acknowledgeAttachedInstance":false}`, http.StatusBadRequest},
+		{"assigned machine with acknowledgment", assignedMachine, `{"railRange":{"start":0,"end":3},"planeRange":{"start":2,"end":7},"maintenanceMode":false,"reference":"","acknowledgeAttachedInstance":true}`, http.StatusOK},
 		{"viewer cannot update", func(_ *testing.T, f *common.TestSetupProviderMachineHandlerFixture) {
 			f.User = &cdbm.User{OrgData: cdbm.OrgData{f.Org: cdbm.Org{Name: f.Org, Roles: []string{authz.ProviderViewerRole}}}}
 		}, "", http.StatusForbidden},

@@ -25,13 +25,18 @@ var _ MappedNullable = &MachineSpectrumXMultiplaneObservation{}
 
 // MachineSpectrumXMultiplaneObservation The last attempted interface revision and observed state. A revision may lag the desired configuration.
 type MachineSpectrumXMultiplaneObservation struct {
+	// Logical interface name in the form eth_r<rail>_p<plane>, matching the corresponding desired interface configuration.
 	LogicalName string `json:"logicalName"`
 	// Null when readback is unavailable; false means maintenance is off.
-	MaintenanceMode NullableBool   `json:"maintenanceMode"`
-	Revision        string         `json:"revision"`
-	Netdev          NullableString `json:"netdev"`
-	Error           NullableString `json:"error"`
-	ObservedAt      NullableTime   `json:"observedAt"`
+	MaintenanceMode NullableBool `json:"maintenanceMode"`
+	// Desired configuration revision last attempted by this DPU. May be older than the current desired revision. Empty if the DPU has not reported an observation.
+	Revision string `json:"revision"`
+	// Linux network device name resolved by the DPU for this logical interface. Null if no device was resolved.
+	Netdev NullableString `json:"netdev"`
+	// Error from the DPU's attempt to apply or observe this interface. Null when no error has been reported.
+	Error NullableString `json:"error"`
+	// Timestamp when the DPU attempted to apply or observe this interface, in RFC 3339 format. Null if the DPU has not reported an observation.
+	Observed NullableTime `json:"observed"`
 }
 
 type _MachineSpectrumXMultiplaneObservation MachineSpectrumXMultiplaneObservation
@@ -40,14 +45,14 @@ type _MachineSpectrumXMultiplaneObservation MachineSpectrumXMultiplaneObservatio
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewMachineSpectrumXMultiplaneObservation(logicalName string, maintenanceMode NullableBool, revision string, netdev NullableString, error_ NullableString, observedAt NullableTime) *MachineSpectrumXMultiplaneObservation {
+func NewMachineSpectrumXMultiplaneObservation(logicalName string, maintenanceMode NullableBool, revision string, netdev NullableString, error_ NullableString, observed NullableTime) *MachineSpectrumXMultiplaneObservation {
 	this := MachineSpectrumXMultiplaneObservation{}
 	this.LogicalName = logicalName
 	this.MaintenanceMode = maintenanceMode
 	this.Revision = revision
 	this.Netdev = netdev
 	this.Error = error_
-	this.ObservedAt = observedAt
+	this.Observed = observed
 	return &this
 }
 
@@ -185,30 +190,30 @@ func (o *MachineSpectrumXMultiplaneObservation) SetError(v string) {
 	o.Error.Set(&v)
 }
 
-// GetObservedAt returns the ObservedAt field value
+// GetObserved returns the Observed field value
 // If the value is explicit nil, the zero value for time.Time will be returned
-func (o *MachineSpectrumXMultiplaneObservation) GetObservedAt() time.Time {
-	if o == nil || o.ObservedAt.Get() == nil {
+func (o *MachineSpectrumXMultiplaneObservation) GetObserved() time.Time {
+	if o == nil || o.Observed.Get() == nil {
 		var ret time.Time
 		return ret
 	}
 
-	return *o.ObservedAt.Get()
+	return *o.Observed.Get()
 }
 
-// GetObservedAtOk returns a tuple with the ObservedAt field value
+// GetObservedOk returns a tuple with the Observed field value
 // and a boolean to check if the value has been set.
 // NOTE: If the value is an explicit nil, `nil, true` will be returned
-func (o *MachineSpectrumXMultiplaneObservation) GetObservedAtOk() (*time.Time, bool) {
+func (o *MachineSpectrumXMultiplaneObservation) GetObservedOk() (*time.Time, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return o.ObservedAt.Get(), o.ObservedAt.IsSet()
+	return o.Observed.Get(), o.Observed.IsSet()
 }
 
-// SetObservedAt sets field value
-func (o *MachineSpectrumXMultiplaneObservation) SetObservedAt(v time.Time) {
-	o.ObservedAt.Set(&v)
+// SetObserved sets field value
+func (o *MachineSpectrumXMultiplaneObservation) SetObserved(v time.Time) {
+	o.Observed.Set(&v)
 }
 
 func (o MachineSpectrumXMultiplaneObservation) MarshalJSON() ([]byte, error) {
@@ -226,7 +231,7 @@ func (o MachineSpectrumXMultiplaneObservation) ToMap() (map[string]interface{}, 
 	toSerialize["revision"] = o.Revision
 	toSerialize["netdev"] = o.Netdev.Get()
 	toSerialize["error"] = o.Error.Get()
-	toSerialize["observedAt"] = o.ObservedAt.Get()
+	toSerialize["observed"] = o.Observed.Get()
 	return toSerialize, nil
 }
 
@@ -240,7 +245,7 @@ func (o *MachineSpectrumXMultiplaneObservation) UnmarshalJSON(data []byte) (err 
 		"revision",
 		"netdev",
 		"error",
-		"observedAt",
+		"observed",
 	}
 
 	allProperties := make(map[string]interface{})

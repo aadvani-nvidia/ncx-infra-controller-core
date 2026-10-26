@@ -22,8 +22,9 @@ import (
 // checks if the MachineSpectrumXMultiplaneDPUStatus type satisfies the MappedNullable interface at compile time
 var _ MappedNullable = &MachineSpectrumXMultiplaneDPUStatus{}
 
-// MachineSpectrumXMultiplaneDPUStatus Independent maintenance observations from one associated BF4 DPU.
+// MachineSpectrumXMultiplaneDPUStatus Independent maintenance observations from one associated BlueField-4 DPU.
 type MachineSpectrumXMultiplaneDPUStatus struct {
+	// ID of the associated BlueField-4 DPU whose interface observations are returned.
 	DpuMachineId string `json:"dpuMachineId"`
 	// One entry per declared interface, including those without readback.
 	Interfaces []MachineSpectrumXMultiplaneObservation `json:"interfaces"`
