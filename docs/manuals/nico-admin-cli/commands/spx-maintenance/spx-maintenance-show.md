@@ -5,7 +5,7 @@
 ## NAME
 
 nico-admin-cli-spx-maintenance-show - Show host maintenance
-configuration and each DPUs status
+configuration and the status of each DPU
 
 ## SYNOPSIS
 
@@ -15,10 +15,10 @@ nico-admin-cli spx-maintenance --machine-id <MACHINE_ID> show
 
 ## DESCRIPTION
 
-Show host maintenance configuration and each DPUs status. The Config
-updated at (UTC) column shows the last configuration change timestamp
-encoded in the desired revision. Unset maintenance modes show a dash
-because their revision only records initialization.
+Show host maintenance configuration and the status of each DPU. The
+Config updated at (UTC) column shows the last configuration change
+timestamp encoded in the desired revision. Unset maintenance modes show
+a dash because their revision only records initialization.
 
 ## OPTIONS
 

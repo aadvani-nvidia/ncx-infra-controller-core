@@ -20,10 +20,10 @@ Configure maintenance mode for Spectrum-X planes on a machine. Each rail
 has two SuperNICs: planes 0-3 belong to one, and planes 4-7 belong to
 the other. Select a single value, an inclusive ascending START-END
 range, or all for each rail and plane selector. A single-plane selection
-leaves the other planes unchanged. The DPU flavor initializes planes in
-maintenance mode. Until a CLI request is made, the agent observes
-without changing that state. Maintenance mode on disables a plane;
-maintenance mode off enables it.
+leaves the other planes unchanged. When partial-multiplane is enabled,
+the DPU flavor initializes planes in maintenance mode. Until you send a
+CLI or REST request, the agent observes that state without changing it.
+Maintenance mode on disables a plane; maintenance mode off enables it.
 
 ## OPTIONS
 
@@ -70,7 +70,7 @@ nico-admin-cli spx-maintenance --machine-id fm100psbtmb15tgh6q5duqb8ke5grng7ksd9
 | Subcommand | Description |
 |---|---|
 | [`multiplane`](./spx-maintenance-multiplane.md) | Turn maintenance mode on or off for the selected planes |
-| [`show`](./spx-maintenance-show.md) | Show host maintenance configuration and each DPU's status |
+| [`show`](./spx-maintenance-show.md) | Show host maintenance configuration and the status of each DPU |
 
 ---
 

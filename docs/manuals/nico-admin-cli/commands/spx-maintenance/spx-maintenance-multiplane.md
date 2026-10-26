@@ -21,7 +21,8 @@ Turn maintenance mode on or off for the selected planes
 
 `--reference <REFERENCE>`
 
-Optional reference or reason for the change
+Omit to preserve the saved reference; pass a value to replace it or an
+empty string to clear it
 
 `--extended`
 
@@ -55,8 +56,8 @@ The literal keyword rail
 
 `<0-3|START-END|all>`
 
-Rail number (0-3), inclusive ascending range (e.g. 0-2), or all four
-rails
+Rail number (0-3), inclusive ascending range (for example, 0-2), or all
+four rails
 
 `<plane>`
 
@@ -68,12 +69,12 @@ The literal keyword plane
 
 `<0-7|START-END|all>`
 
-Plane number (0-7), inclusive ascending range (e.g. 1-4), or all eight
-planes on each selected rail
+Plane number (0-7), inclusive ascending range (for example, 1-4), or all
+eight planes on each selected rail
 
 `<on|off>`
 
-maintenance mode on disables the plane; maintenance mode off enables
+Maintenance mode on disables the plane; maintenance mode off enables
 it
 
 *Possible values:*
