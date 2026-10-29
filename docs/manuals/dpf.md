@@ -1494,7 +1494,7 @@ initialization of planes in maintenance mode during provisioning, set:
 partial-multiplane = "disabled"
 ```
 
-Core reads this setting at startup. With Cerebro interface inventory, `enabled`
+Core reads this setting at startup. Setting `enabled`
 initializes all planes in maintenance mode once per provisioning. `disabled` skips
 that step, leaving newly provisioned planes in their default enabled state.
 Legacy MAC/IP inventory skips maintenance initialization for either value.

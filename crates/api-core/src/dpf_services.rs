@@ -2618,14 +2618,10 @@ mod tests {
         .into_iter()
         .find(|service| service.name == DPU_AGENT_SERVICE_NAME)
         .expect("mandatory DPU agent service");
-        let configuration =
-            build_service_configuration(&service, TEST_NS, "bf4astra", &BTreeMap::new());
-        let values = configuration
+        let template = build_service_template(&service, TEST_NS, "bf4astra");
+        let values = template
             .spec
-            .service_configuration
-            .expect("serviceConfiguration must be set")
             .helm_chart
-            .expect("helmChart must be set")
             .values
             .expect("helmChart values must be set");
 
