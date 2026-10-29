@@ -4082,11 +4082,12 @@ the saved reference; an empty string clears it.
 For Infrastructure Providers: Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
 
 When an Instance is attached
-to the Machine, `acknowledgeAttachedInstance` must be `true`; otherwise the request returns HTTP 400.
-A 200 response confirms saved desired
-configuration, not hardware completion. Read this resource until every relevant DPU observation
-has the desired interface revision, no error, and the requested maintenance mode. Readbacks
-remain separate per DPU and may be absent or describe an earlier revision.
+When the Machine has a Tenant Instance attached, `acknowledgeAttachedInstance` must
+be set to `true` in order to acknowledge the risk. A `200` response confirms that the desired
+configuration was saved, but not completion of the hardware operation. User should fetch Machine
+details in order to detect whether DPU observations have the desired interface revision and the
+requested maintenance mode or if it has an error. The returned API data are separate per DPU
+and may be absent or describe an earlier revision while operation is in progress.
 
 	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
 	@param org Name of the Org
