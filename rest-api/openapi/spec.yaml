@@ -12045,7 +12045,6 @@ paths:
 
         For Infrastructure Providers: Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
 
-        When an Instance is attached
         When the Machine has a Tenant Instance attached, `acknowledgeAttachedInstance` must
         be set to `true` in order to acknowledge the risk. A `200` response confirms that the desired
         configuration was saved, but not completion of the hardware operation. User should fetch Machine
